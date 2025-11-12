@@ -1,0 +1,6 @@
+Experiment ID: EXP0001
+Mode: INDEPENDENT DATA
+Total runs: 2
+
+Run 001: SUCCESS
+Run 000: SUCCESS

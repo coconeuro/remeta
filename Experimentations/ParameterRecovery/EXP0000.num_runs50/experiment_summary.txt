@@ -1,0 +1,60 @@
+Experiment ID: EXP0000.num_runs50
+Mode: INDEPENDENT DATA
+Run configs:
+
+{'0': None, '1': None, '2': None, '3': None, '4': None, '5': None, '6': None, '7': None, '8': None, '9': None, '10': None, '11': None, '12': None, '13': None, '14': None, '15': None, '16': None, '17': None, '18': None, '19': None, '20': None, '21': None, '22': None, '23': None, '24': None, '25': None, '26': None, '27': None, '28': None, '29': None, '30': None, '31': None, '32': None, '33': None, '34': None, '35': None, '36': None, '37': None, '38': None, '39': None, '40': None, '41': None, '42': None, '43': None, '44': None, '45': None, '46': None, '47': None, '48': None, '49': None}
+Data configs:
+
+{'0': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '1': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '2': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '3': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '4': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '5': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '6': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '7': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '8': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '9': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '10': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '11': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '12': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '13': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '14': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '15': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '16': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '17': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '18': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '19': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '20': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '21': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '22': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '23': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '24': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '25': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '26': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '27': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '28': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '29': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '30': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '31': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '32': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '33': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '34': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '35': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '36': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '37': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '38': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '39': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '40': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '41': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '42': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '43': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '44': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '45': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '46': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '47': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '48': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '49': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}}
+Total runs: 50
+
+Run 0: SUCCESS
+Run 1: SUCCESS
+Run 2: SUCCESS
+Run 3: SUCCESS
+Run 4: SUCCESS
+Run 5: SUCCESS
+Run 6: SUCCESS
+Run 7: SUCCESS
+Run 8: SUCCESS
+Run 9: SUCCESS
+Run 10: SUCCESS
+Run 11: SUCCESS
+Run 12: SUCCESS
+Run 13: SUCCESS
+Run 14: SUCCESS
+Run 15: SUCCESS
+Run 16: SUCCESS
+Run 17: SUCCESS
+Run 18: SUCCESS
+Run 19: SUCCESS
+Run 20: SUCCESS
+Run 21: SUCCESS
+Run 22: SUCCESS
+Run 23: SUCCESS
+Run 24: SUCCESS
+Run 25: SUCCESS
+Run 26: SUCCESS
+Run 27: SUCCESS
+Run 28: SUCCESS
+Run 29: SUCCESS
+Run 30: SUCCESS
+Run 31: SUCCESS
+Run 32: SUCCESS
+Run 33: SUCCESS
+Run 34: SUCCESS
+Run 35: SUCCESS
+Run 36: SUCCESS
+Run 37: SUCCESS
+Run 38: SUCCESS
+Run 39: SUCCESS
+Run 40: SUCCESS
+Run 41: SUCCESS
+Run 42: SUCCESS
+Run 43: SUCCESS
+Run 44: SUCCESS
+Run 45: SUCCESS
+Run 46: SUCCESS
+Run 47: SUCCESS
+Run 48: SUCCESS
+Run 49: SUCCESS

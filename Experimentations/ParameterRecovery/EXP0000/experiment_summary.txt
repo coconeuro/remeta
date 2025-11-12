@@ -1,0 +1,15 @@
+Experiment ID: EXP0000
+Mode: INDEPENDENT DATA
+Run configs:
+
+{'000': None, '001': None, '002': None, '003': None, '004': None}
+Data configs:
+
+{'000': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '001': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '002': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '003': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}, '004': {'nsubjects': 1, 'nsamples': 10000, 'stimuli_stepsize': 0.25}}
+Total runs: 5
+
+Run 000: SUCCESS
+Run 001: SUCCESS
+Run 002: SUCCESS
+Run 003: SUCCESS
+Run 004: SUCCESS

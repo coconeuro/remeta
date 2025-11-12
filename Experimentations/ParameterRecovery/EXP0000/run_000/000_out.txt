@@ -1,0 +1,80 @@
+[2025-11-12 19:08:53,095] INFO: Step 1/6: Creating configuration
+[2025-11-12 19:08:53,096] INFO: Using default configuration (baseline run with default parameters)
+[2025-11-12 19:08:53,096] INFO: True parameters for data generation (defaults)
+[2025-11-12 19:08:53,096] INFO:   bias_sens = 0.0
+[2025-11-12 19:08:53,096] INFO:   evidence_bias_mult_meta = 1.0
+[2025-11-12 19:08:53,096] INFO:   noise_meta = 0.2
+[2025-11-12 19:08:53,096] INFO:   noise_sens = 0.1
+[2025-11-12 19:08:53,096] INFO: Step 2/6: Generating synthetic data
+[2025-11-12 19:08:53,096] INFO: Generating synthetic data with nsubjects=1, nsamples=10000, stimuli_stepsize=0.25
+----------------------------------
+Basic stats of the simulated data:
+    Performance: 99.7% correct
+    Choice bias: -0.0%
+    Confidence: 0.83
+    AUROC2: 0.88
+----------------------------------
+[2025-11-12 19:08:53,101] INFO: Synthetic data generated successfully
+[2025-11-12 19:08:53,101] INFO: Saving independent dataset for run 000
+[2025-11-12 19:08:53,103] INFO: Dataset saved to: /Users/awritrojitbanerjee/Library/CloudStorage/GoogleDrive-awritrojit2000@gmail.com/My Drive/PhD/ReMeta/remeta-project/Experimentations/SyntheticData/EXP0000/data_run_000.pkl
+[2025-11-12 19:08:53,103] INFO: Metadata saved to: /Users/awritrojitbanerjee/Library/CloudStorage/GoogleDrive-awritrojit2000@gmail.com/My Drive/PhD/ReMeta/remeta-project/Experimentations/SyntheticData/EXP0000/data_run_000_metadata.pkl
+[2025-11-12 19:08:53,103] INFO: Step 3/6: Fitting model
+[2025-11-12 19:08:53,103] INFO: Creating ReMeta instance
+[2025-11-12 19:08:53,103] INFO: Fitting ReMeta model to synthetic data...
+
++++ Sensory level +++
+Initial guess (neg. LL: 149.41)
+    [guess] noise_sens: 0.1
+    [guess] bias_sens: 0
+Performing local optimization
+    [final] noise_sens: 0.0999 (true: 0.1)
+    [final] bias_sens: -0.00208 (true: 0)
+Final neg. LL: 149.39
+Neg. LL using true params: 149.41
+Total fitting time: 0.24 secs
+
++++ Metacognitive level +++
+Initial guess (neg. LL: 9263.04)
+    [guess] noise_meta: 0.2
+    [guess] evidence_bias_mult_meta: 1
+Grid search activated (grid size = 160)
+    [grid] noise_meta: 0.25
+    [grid] evidence_bias_mult_meta: 2
+Grid neg. LL: 9641.0
+Grid runtime: 30.09 secs
+Performing local optimization
+    [final] noise_meta: 0.194 (true: 0.2)
+    [final] evidence_bias_mult_meta: 0.957 (true: 1)
+Final neg. LL: 9256.62
+Neg. LL using true params: 9263.04
+Total fitting time: 41 secs
+[2025-11-12 19:09:39,513] INFO: Model fitting completed
+[2025-11-12 19:09:39,513] INFO: Estimated parameters:
+[2025-11-12 19:09:39,513] INFO:   noise_sens = 0.0998794196690233
+[2025-11-12 19:09:39,513] INFO:   bias_sens = -0.0020844756996851884
+[2025-11-12 19:09:39,513] INFO:   noise_meta = 0.19375089364975878
+[2025-11-12 19:09:39,513] INFO:   evidence_bias_mult_meta = 0.9572679112442828
+[2025-11-12 19:09:39,513] INFO: Negative log-likelihood comparison:
+[2025-11-12 19:09:39,513] INFO:   Sensory - True: 149.41, Fitted: 149.39
+[2025-11-12 19:09:39,513] INFO:   Metacognitive - True: 9263.04, Fitted: 9256.62
+[2025-11-12 19:09:39,513] INFO: Step 4/6: Computing parameter differences
+[2025-11-12 19:09:39,513] INFO: Computing parameter differences (Delta = P_hat - P)
+[2025-11-12 19:09:39,513] INFO:   noise_sens: 0.0999 - 0.1000 = -0.0001
+[2025-11-12 19:09:39,513] INFO:   bias_sens: -0.0021 - 0.0000 = -0.0021
+[2025-11-12 19:09:39,513] INFO:   noise_meta: 0.1938 - 0.2000 = -0.0062
+[2025-11-12 19:09:39,513] INFO:   evidence_bias_mult_meta: 0.9573 - 1.0000 = -0.0427
+[2025-11-12 19:09:39,513] INFO: Parameter delta computation completed
+[2025-11-12 19:09:39,513] INFO: Step 5/6: Generating and saving figures
+[2025-11-12 19:09:39,513] INFO: Saving figures to /Users/awritrojitbanerjee/Library/CloudStorage/GoogleDrive-awritrojit2000@gmail.com/My Drive/PhD/ReMeta/remeta-project/Experimentations/ParameterRecovery/EXP0000/run_000 and /Users/awritrojitbanerjee/Library/CloudStorage/GoogleDrive-awritrojit2000@gmail.com/My Drive/PhD/ReMeta/remeta-project/Experimentations/ParameterRecovery/EXP0000/run_000/figpdfs
+[2025-11-12 19:09:39,513] INFO: Generating psychometric plot
+[2025-11-12 19:09:39,954] INFO: Generating confidence plot
+[2025-11-12 19:09:40,068] INFO: Generating link function plot
+[2025-11-12 19:09:42,833] INFO: Generating confidence distribution plot
+[2025-11-12 19:09:45,543] INFO: All figures saved successfully
+[2025-11-12 19:09:45,543] INFO: Step 6/6: Saving results
+[2025-11-12 19:09:45,543] INFO: Saving results to /Users/awritrojitbanerjee/Library/CloudStorage/GoogleDrive-awritrojit2000@gmail.com/My Drive/PhD/ReMeta/remeta-project/Experimentations/ParameterRecovery/EXP0000/run_000/run_dict.pkl
+[2025-11-12 19:09:45,544] INFO: Results saved successfully
+[2025-11-12 19:09:45,544] INFO: Created SUCCESS marker file
+[2025-11-12 19:09:45,544] INFO: ================================================================================
+[2025-11-12 19:09:45,544] INFO: Parameter Recovery Pipeline completed successfully for Run ID: 000
+[2025-11-12 19:09:45,544] INFO: ================================================================================

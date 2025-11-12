@@ -1,0 +1,47 @@
+[2025-11-12 20:43:21,745] INFO: Step 1/6: Creating configuration
+[2025-11-12 20:43:21,746] INFO: Configuration: enable_noise_sens = 1
+[2025-11-12 20:43:21,746] INFO: Parameter overrides for data generation
+[2025-11-12 20:43:21,746] INFO:   noise_sens = 0.6
+[2025-11-12 20:43:21,746] INFO: True parameters for data generation
+[2025-11-12 20:43:21,746] INFO:   bias_sens = 0.0
+[2025-11-12 20:43:21,746] INFO:   evidence_bias_mult_meta = 1.0
+[2025-11-12 20:43:21,746] INFO:   noise_meta = 0.2
+[2025-11-12 20:43:21,746] INFO:   noise_sens = 0.6
+[2025-11-12 20:43:21,746] INFO: Step 2/6: Generating synthetic data
+[2025-11-12 20:43:21,746] INFO: Generating synthetic data with nsubjects=1, nsamples=500, stimuli_stepsize=0.25
+[2025-11-12 20:43:21,747] ERROR: Error in Parameter Recovery Pipeline: size does not match the broadcast shape of the parameters.
+[2025-11-12 20:43:21,747] ERROR: Full traceback:
+Traceback (most recent call last):
+  File "/Users/awritrojitbanerjee/Library/CloudStorage/GoogleDrive-awritrojit2000@gmail.com/My Drive/PhD/ReMeta/remeta-project/ValidationSchedules/ParameterRecovery/parameter_recovery.py", line 656, in run
+    self.data = self._generate_synthetic_data()
+  File "/Users/awritrojitbanerjee/Library/CloudStorage/GoogleDrive-awritrojit2000@gmail.com/My Drive/PhD/ReMeta/remeta-project/ValidationSchedules/ParameterRecovery/parameter_recovery.py", line 300, in _generate_synthetic_data
+    data = remeta.simu_data(
+  File "/Users/awritrojitbanerjee/Library/CloudStorage/GoogleDrive-awritrojit2000@gmail.com/My Drive/PhD/ReMeta/remeta-project/remeta/gendata.py", line 204, in simu_data
+    confidence = np.maximum(0, np.minimum(1, dist.rvs((nsubjects, nsamples))))
+  File "/Users/awritrojitbanerjee/Library/CloudStorage/GoogleDrive-awritrojit2000@gmail.com/My Drive/PhD/ReMeta/remeta-project/remeta/fast_truncnorm.py", line 174, in rvs
+    return self.dist.rvs(*self.args, **kwds)
+  File "/Users/awritrojitbanerjee/Library/CloudStorage/GoogleDrive-awritrojit2000@gmail.com/My Drive/PhD/ReMeta/remeta-project/remeta/fast_truncnorm.py", line 593, in rvs
+    args, loc, scale, size = self._parse_args_rvs(*args, **kwds)
+  File "<string>", line 6, in _parse_args_rvs
+  File "/Users/awritrojitbanerjee/Library/CloudStorage/GoogleDrive-awritrojit2000@gmail.com/My Drive/PhD/ReMeta/remeta-project/remeta/fast_truncnorm.py", line 484, in _argcheck_rvs
+    raise ValueError("size does not match the broadcast shape of "
+ValueError: size does not match the broadcast shape of the parameters.
+Traceback (most recent call last):
+  File "/Users/awritrojitbanerjee/Library/CloudStorage/GoogleDrive-awritrojit2000@gmail.com/My Drive/PhD/ReMeta/remeta-project/ValidationSchedules/ParameterRecovery/test_aic_feature.py", line 98, in <module>
+    test_aic_computation()
+  File "/Users/awritrojitbanerjee/Library/CloudStorage/GoogleDrive-awritrojit2000@gmail.com/My Drive/PhD/ReMeta/remeta-project/ValidationSchedules/ParameterRecovery/test_aic_feature.py", line 52, in test_aic_computation
+    result = pr.run()
+  File "/Users/awritrojitbanerjee/Library/CloudStorage/GoogleDrive-awritrojit2000@gmail.com/My Drive/PhD/ReMeta/remeta-project/ValidationSchedules/ParameterRecovery/parameter_recovery.py", line 656, in run
+    self.data = self._generate_synthetic_data()
+  File "/Users/awritrojitbanerjee/Library/CloudStorage/GoogleDrive-awritrojit2000@gmail.com/My Drive/PhD/ReMeta/remeta-project/ValidationSchedules/ParameterRecovery/parameter_recovery.py", line 300, in _generate_synthetic_data
+    data = remeta.simu_data(
+  File "/Users/awritrojitbanerjee/Library/CloudStorage/GoogleDrive-awritrojit2000@gmail.com/My Drive/PhD/ReMeta/remeta-project/remeta/gendata.py", line 204, in simu_data
+    confidence = np.maximum(0, np.minimum(1, dist.rvs((nsubjects, nsamples))))
+  File "/Users/awritrojitbanerjee/Library/CloudStorage/GoogleDrive-awritrojit2000@gmail.com/My Drive/PhD/ReMeta/remeta-project/remeta/fast_truncnorm.py", line 174, in rvs
+    return self.dist.rvs(*self.args, **kwds)
+  File "/Users/awritrojitbanerjee/Library/CloudStorage/GoogleDrive-awritrojit2000@gmail.com/My Drive/PhD/ReMeta/remeta-project/remeta/fast_truncnorm.py", line 593, in rvs
+    args, loc, scale, size = self._parse_args_rvs(*args, **kwds)
+  File "<string>", line 6, in _parse_args_rvs
+  File "/Users/awritrojitbanerjee/Library/CloudStorage/GoogleDrive-awritrojit2000@gmail.com/My Drive/PhD/ReMeta/remeta-project/remeta/fast_truncnorm.py", line 484, in _argcheck_rvs
+    raise ValueError("size does not match the broadcast shape of "
+ValueError: size does not match the broadcast shape of the parameters.
