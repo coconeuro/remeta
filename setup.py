@@ -13,7 +13,7 @@ DESCRIPTION = (
 DISTNAME = 'remeta'
 MAINTAINER = 'Matthias Guggenmos'
 MAINTAINER_EMAIL = 'mg.corresponding@gmail.com'
-VERSION = '0.1.3'
+VERSION = '1.0.0'
 LICENCE = 'MIT License'
 
 INSTALL_REQUIRES = [
@@ -34,6 +34,9 @@ CLASSIFIERS = [
     'Programming Language :: Python :: 3.8',
     'Programming Language :: Python :: 3.9',
     'Programming Language :: Python :: 3.10'
+    'Programming Language :: Python :: 3.11'
+    'Programming Language :: Python :: 3.12'
+    'Programming Language :: Python :: 3.13'
 ]
 
 try:

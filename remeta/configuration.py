@@ -1,14 +1,15 @@
 import warnings
 from dataclasses import dataclass
-from typing import Callable, Dict, Union, List
+from typing import Dict, List, Tuple
 
 import numpy as np
-
-from .modelspec import Parameter, ParameterSet
-from .util import ReprMixin, _slsqp_epsilon
 from importlib.util import find_spec
 
+from .modelspec import Parameter, ParameterSet
+from .util import ReprMixin, reset_dataclass_on_init
 
+
+@reset_dataclass_on_init
 @dataclass
 class Configuration(ReprMixin):
     """
@@ -17,475 +18,436 @@ class Configuration(ReprMixin):
     Parameters
     ----------
     *** Basic definition of the model ***
-    skip_meta : bool
-        If False, only fit the sensory level.
-    meta_noise_type : str
+    type2_fitting_type : str (default: 'criteria')
+        Whether confidence is fitted with discrete *criteria* or as a continuous variable.
+        Possible values: 'criteria', 'continuous'
+    type2_noise_type : str (default: 'noisy-report)
         Whether the model considers noise at readout or report.
-        Possible values: 'noisy_report', 'noisy_readout'
-    meta_noise_dist : str
+        Possible values: 'noisy_report', 'noisy_readout', 'noisy_temperature'
+    type2_noise_dist : str
+            (default: noisy-report + criteria -> 'truncated_norm_mode'
+                      noisy-report + continuous -> 'truncated_norm_mode'
+                      noisy-readout + criteria -> 'truncated_norm_mode'
+                      noisy-readout + continuous -> 'truncated_norm_mode'
+                      noisy-temperature + criteria -> 'lognorm_mode'
+                      noisy-temperature + continuous -> 'truncated_norm_mode'
+            )
         Metacognitive noise distribution.
-        Possible valus: 'truncated_norm', 'truncated_gumbel', 'truncated_lognorm',
-                        'norm', 'gumbel', 'lognorm', 'beta', 'gamma',
-                        'censored_norm', 'censored_gumbel', 'censored_lognorm', 'censored_gamma'
-                        Experimental (for internal use only):
-                        'beta_std', 'betaprime', 'lognorm_varstd',
-                        'censored_lognorm', 'censored_lognorm_varstd', 'censored_betaprime',
-                        'truncated_norm_fit', 'truncated_lognorm_varstd',
-                        Works only with lookup table (not deployed via pip):
-                        'truncated_norm_lookup', 'truncated_gumbel_lookup'
-    meta_link_function : str
-        Metacognitive link function. In case of criterion-based link functions {x} refers to the number of criteria.
-        Possible values: 'probability_correct', 'identity', 'tanh', 'normcdf', 'erf', 'alg', 'guder', 'linear',
-                         '{x}_criteria', '{x}_criteria_linear', '{x}_criteria_linear_tanh'
-                         Note: replace {x} with the number of criteria
+        Possible values:
+            noisy_report: 'beta_mean_std', 'beta_mode_std', 'beta_mode',
+                          'truncated_norm_mode_std', 'truncated_norm_mode' (default),
+                          'truncated_gumbel_mode_std', 'truncated_gumbel_mode',
+                          'truncated_lognorm_mode_std', 'truncated_lognorm', 'truncated_lognorm_mode',
+                          'truncated_lognorm_mean'
+            noisy_readout: 'lognorm_median_std', 'lognorm_mean', 'lognorm_mode', 'lognorm_mode_std', 'lognorm_mean_std',
+                           'gamma_mode_std', 'gamma_mean_std', 'gamma_mean', 'gamma_mode', 'gamma_mean_cv',
+                           'betaprime_mean_std',
+                           'truncated_norm_mode_std', 'truncated_norm_mode',
+                           'truncated_gumbel_mode_std', 'truncated_gumbel_mode'
+            noisy_temperature: same as noisy_readout
+
 
     *** Enable or disable specific parameters ***
     * Each setting can take the values 0, 1 or 2:
     *    0: Disable parameter.
     *    1: Enable parameter.
-    *    2: Enable parameter and fit separate values for the negative and positive stimulus category (in the case of
-    *       sensory parameters, indicated by the suffix '_sens') or negative and positive decision values (in the
-    *       case of metacognitive parameters, indicated by the suffix '_meta').
-    enable_warping_sens : int (default: 0)
-        Fit a non-linear transducer prior to sensory processing (the nonlinear function is defined via
-        `function_warping_sens`).
-    enable_noise_sens : int (default: 1)
-        Fit separate sensory noise parameters for both stimulus categories.
-    enable_noise_transform_sens : int (default: 0)
-        Fit an additional sensory noise parameter for signal-dependent sensory noise (the type of dependency is is
-        defined via `function_noise_transform_sens`).
-    enable_thresh_sens : int (default: 0)
-        Fit a sensory threshold.
-    enable_bias_sens : int (default: 1)
-        Fit a sensory bias towards one of the stimulus categories.
-    enable_noise_meta : int (default: 1)
+    *    2: Enable parameter and fit separate values for the negative and positive stimulus category
+            (works only for type 1 parameters!)
+    enable_type1_param_noise : int (default: 1)
+        Fit separate type 1 noise parameters for both stimulus categories.
+    enable_type1_param_noise_heteroscedastic : int (default: 0)
+        Fit an additional type 1 noise parameter for signal-dependent type 1 noise (the type of dependency is
+        defined via `type1_noise_signal_dependency`).
+    enable_type1_param_thresh : int (default: 0)
+        Fit a type 1 threshold.
+    enable_type1_param_bias : int (default: 1)
+        Fit a type 1 bias towards one of the stimulus categories.
+    enable_type2_param_noise : int (default: 1)
         Fit a metacognitive noise parameter
-    enable_noise_transform_meta : int (default: 0)
-        Fit an additional metacognitive noise parameter for signal-dependent metacognitive noise (the type of dependency
-        is defined via `function_noise_transform_meta`). Note: at present, enable_noise_transform_meta=2 leads to
-        biased results and is therefore discouraged.
-    enable_evidence_bias_add_meta : int (default: 0)
-        Fit an additive metacognitive bias loading on sensory evidence.
-    evidence_bias_mult_meta : int (default: 1)
-        Fit a multiplicative metacognitive bias loading on evidence. In the case of a criterion-based link function,
-        multiple parameters are fitted for each criterion/confidence level.
-    evidence_bias_mult_postnoise_meta : int (default: 0)
-        Fit a multiplicative metacognitive bias loading on evidence, but operating after the application of readout
-        noise. In the case of a criterion-based link function, multiple parameters are fitted for each
-        criterion/confidence level.
-    enable_confidence_bias_mult_meta : int (default: 0)
-        Fit a multiplicative metacognitive bias loading on confidence.
-    enable_confidence_bias_add_meta : int (default: 0)
-        Fit an additive metacognitive bias loading on confidence.
-    enable_confidence_bias_pow_meta : int (default: 1)
-        Fit an exponential metacognitive bias loading on confidence.
-    enable_criteria_meta : int (default: 0)
-        Fit criteria for a criterion-based link function. Note that the number of criteria is set via the link function
-        argument (see `meta_link_function`)
-    enable_levels_meta : int (default: 0)
-        Fit confidence levels for a criterion-based link function. If disabled, equidistant confidence levels are
-        assumed (e.g. 1/3, 2/3, 1 for three criteria).
+    enable_type2_param_evidence_bias_mult : int (default: 0)
+        Fit a multiplicative metacognitive bias loading on evidence.
+    enable_type2_param_criteria : int (default: 0)
+        Fit confidence criteria.
 
+    *** Additional options to specify the nature of type 2 fitting ***
+    n_discrete_confidence_levels : int (default: 5)
+        Number of confidence criteria. Only applies in case of type2_fitting_type='criteria'.
 
     *** Define fitting characteristics of the parameters ***
     * The fitting of each parameter is characzerized as follows:
     *     1) An initial guess.
     *     2) Lower and upper bound.
-    *     3) Grid range, i.e. the range of values that are tested during the initial gridsearch search.
+    *     3) Grid range, i.e. list of values that are tested during the initial gridsearch search.
     * Sensible default values are provided for all parameters. To tweak those, one can either define an entire
     * ParameterSet, which is a container for a set of parameters, or each parameter individually. Note that the
     * parameters must be either defined as a Parameter instance or as List[Parameter] in case when separate values are
     * fitted for the positive and negative stimulus category/decision value).
-    paramset_sens : ParameterSet
-        Parameter set for the sensory level.
-    paramset_meta : ParameterSet
-        Parameter set for the metacognitive level.
+    paramset_type1 : ParameterSet
+        Parameter set for the type 1 level.
+    paramset_type2 : ParameterSet
+        Parameter set for the type 2 level.
 
-    warping_sens : Union[Parameter, List[Parameter]]
-        Parameter for the nonlinear transducer.
-    noise_sens : Union[Parameter, List[Parameter]]
-        Parameter for sensory noise.
-    noise_transform_sens : Union[Parameter, List[Parameter]]
-        Parameter for multiplicative sensory noise.
-    thresh_sens : Union[Parameter, List[Parameter]]
-        Parameter for the sensory threshold.
-    bias_sens : Union[Parameter, List[Parameter]]
-        Parameter for the sensory bias.
-    noise_meta : Union[Parameter, List[Parameter]]
+    _type1_param_noise : Union[Parameter, List[Parameter]]  (default: 1)
+        Parameter for type 1 noise.
+    _type1_param_noise_heteroscedastic : Union[Parameter, List[Parameter]]  (default: 0)
+        Parameter for signal-dependent type 1 noise.
+    type1_noise_signal_dependency: str (default: 'none')
+        Can be one of 'none', 'multiplicative', 'power', 'exponential' or 'logarithm'.
+    _type1_param_thresh : Union[Parameter, List[Parameter]] (default: 0)
+        Parameter for the type 1 threshold.
+    _type1_param_bias : Union[Parameter, List[Parameter]]  (default: 1)
+        Parameter for the type 1 bias.
+    _type2_param_noise : Union[Parameter, List[Parameter]]  (default: 1)
         Parameter for metacognitive noise.
-    noise_transform_meta : Union[Parameter, List[Parameter]]
-        Parameter for multiplicative megacognitive noise.
-    evidence_bias_mult_meta : Union[Parameter, List[Parameter]]
-        Parameter for multiplicative metacognitive bias loading on evidence.
-    evidence_bias_add_meta : Union[Parameter, List[Parameter]]
-        Parameter for additive metacognitive bias loading on evidence.
-    evidence_bias_mult_postnoise_meta : Union[Parameter, List[Parameter]]
-        Parameter for multiplicative metacognitive bias loading on evidence, but after the application of readout noise.
-    confidence_bias_mult_meta : Union[Parameter, List[Parameter]]
-        Parameter for multiplicative metacognitive bias loading on confidence.
-    confidence_bias_add_meta : Union[Parameter, List[Parameter]]
-        Parameter for additive metacognitive bias loading on confidence.
-    confidence_bias_pow_meta : Union[Parameter, List[Parameter]]
-        Parameter for an exponential metacognitive bias loading on confidence.
-    criterion{x}_meta : Union[Parameter, List[Parameter]]
-        Parameter for the xth confidence criterion (0-based).
-    level{x}_meta : Union[Parameter, List[Parameter]]
-        Parameter for the xth confidence level (0-based).
+    _type2_param_evidence_bias_mult : Union[Parameter, List[Parameter]]  (default: 0)
+        Parameter for a multiplicative metacognitive bias loading on evidence.
+    type2_param_confidence_criteria : List[Parameter]  (default: 1)
+        List of parameter specifying the confidence criteria.
 
-    *** Constraints ***
-    * Constraints for the parameters are provided in the form of a function, as defined below.
-    constraints_sens_callable : Callable
-        Constraints for sensory parameters. See method `_constraints_sens_default` in this module for the expected
-        format of this Callable. See method `_constraints_sens_default` in this module for the expected
-        format of this Callable. The function must return a list of dictionaries, where each
-        dictionary specifies a scipy optimize constraint.
-    constraints_meta_callable : Callable
-        Constraints for metacognitive parameters. The function must take the configuration object as the first argument
-        and the stimulus array as the second argument. The function must return a list of dictionaries, where each
-        dictionary specifies a scipy optimize constraint.
+    *** Skip type 2 fitting ***
+    skip_type2 : bool (default: False)
+        If True, ignore type 2 settings in the setup of the model configuration & don't fit type 2 level.
 
     *** Methodoligcal aspects of parameter fitting ***
-    * Note: this applies to the fitting of metacognitive parameters only.
-    gridsearch : bool (default: True)
+    * Note: this applies to the fitting of type 2 parameters only.
+    gridsearch : bool (default: False)
         If True, perform initial (usually coarse) gridsearch search, based on the gridsearch defined for a Parameter.
     fine_gridsearch : bool (default: False)
         If True, perform an iteratively finer gridsearch search for each parameter.
     grid_multiproc : bool (default: False)
         If True, use all available cores for the gridsearch search. If False, use a single core.
-    global_minimization : bool (default: False)
-        If True, use a global minimization routine.
-    gradient_method : str or Tuple/List (default: 'slsqp')
+    minimize_along_grid : bool (default: False)
+        If True, do sqlqp minimization for at each grid point.
+    global_minimization : str (default: None)
+        Use one of 'shgo', 'dual_annealing' 'differential_evolution' to start likelihood minimization with
+        a global minimizer.
+    minimize_solver : str or Tuple/List (default: ('slsqp', 'Nelder-Mead'))
         Set scipy.optimize.minimize gradient method
         If provided as Tuple/List, test different gradient methods and take the best
-    gradient_free : bool (default: None)
-        If True, use a gradien-free optimization routine.
     slsqp_epsilon : float or Tuple/List (default: None)
         Set parameter epsilon parameter for the SLSQP optimization method.
         If provided as Tuple/List, test different eps parameters and take the best
-    init_nelder_mead : bool (default: False)
-        If True, jump-start parameter minimization with the gradient-free Nelder-Mead algorithm
 
-    *** Transformation functions ***
-    function_warping_sens: str (default: 'power')
-        Can be one of 'power', 'exponential' or 'identity'.
-    function_noise_transform_sens: str (default: 'multiplicative')
-        Can be one of 'multiplicative', 'power', 'exponential' or 'logarithm'.
-    function_noise_transform_meta: str (default: 'multiplicative')
-        Can be one of 'multiplicative', 'power', 'exponential' or 'logarithm'.
 
     *** Preprocessing ***
     normalize_stimuli_by_max : bool (default: True)
         If True, normalize provided stimuli by their maximum value.
-    confidence_bounds_error : float
-        Set confidence < confidence_bounds_error to 0 and > confidence_bounds_erroror to 1. This might be useful
-        for continuous scales, if 'finger errors' are assumed responsible for the fact that confidence sometimes is not
-        *exactly* 0 or 1 but very close (i.e. the assumption is that observers intended to indicate a confidence of 0/1
-        but failed to do so exactly)
 
-    *** Parameters for the metacognitive likelihood computation ***
-    min_likelihood_sens : float
-        Minimum probability used during the sensory likelihood computation
-    min_likelihood_meta : float
-        Minimum probability used during the metacognitive likelihood computation
-    binsize_meta : float
-        Integration bin size for the computation of the likelihood around empirical confidence values (noisy-report)
-        or metacognitive evidence (noisy-readout).
-    max_dv_deviation : int
-        Number of standard deviations around the mean considered for sensory uncertainty.
-    nbins_dv : int
-        Number of discrete decision values bins that are considered to represent sensory uncertainty.
-    experimental_likelihood : bool
+    *** Parameters for the type 2 likelihood computation ***
+    min_type1_likelihood : float
+        Minimum probability used during the type 1 likelihood computation
+    min_type2_likelihood : float
+        Minimum probability used during the type 2 likelihood computation
+    type2_binsize : float
+        Integration bin size for the computation of the likelihood around empirical confidence values
+    y_decval_range_nsds : int
+        Number of standard deviations around the mean considered for type 1 uncertainty.
+    y_decval_range_nbins : int
+        Number of discrete decision values bins that are considered to represent type 1 uncertainty.
+    resolution_noisy_temperature : float
+        Quintile resolution for the marginalization of type 1 noise in case of type2_noise_type 'noisy_temperature'.
+    experimental_min_uniform_type2_likelihood : bool
         Instead of using a minimum probability during the likelihood computation, use a maximum cumulative
         likelihood based on a 'guessing' model
-    experimental_wrap_binsize_meta : bool (default: False)
-        Ensure constant window size for likelihood integration at the bounds
-    experimental_include_incongruent_dv : bool (default: False)
+    experimental_wrap_type2_integration_window : bool (default: False)
+        Ensure constant window size for likelihood integration at the bounds.
+        Only applies in case of type2_fitting_type='continuous' and experimental_disable_type2_binsize=False
+    experimental_include_incongruent_y_decval : bool (default: False)
         Include incongruent decision values (i.e., sign(actual choice) != sign(decision value)) for the likelihood
         computation
+    experimental_disable_type2_binsize : bool (default: None)
+        Do not use an integegration window for likelihood computation.
+        Only applies in case of type2_fitting_type='continuous'
+
 
     *** Other ***
     true_params : Dict
         Pass true (known) parameter values. This can be useful for testing to compare the likelihood of true and
         fitted parameters. The likelihood of true parameters is returned (and printed).
-    force_settings : bool
-        Some setting combinations are known to be incompatible and/or to produce biased fits. If True, fit the model
-        nevertheless.
-    settings_ignore_warnings : bool (default: False)
+    initilialize_fitting_at_true_params : bool (default: False)
+        Option to initialize the parameter fitting procedure at the true parameters; this can be helpful for testing.
+    silence_configuration_warnings : bool (default: False)
         If True, ignore warnings about user-specified settings.
     print_configuration : bool (default: True)
         If True, print the configuration at instatiation of the ReMeta class.
     """
 
-    skip_meta: bool = False
-    meta_noise_type: str = 'noisy_report'
-    meta_noise_dist: str = 'truncated_norm'
-    meta_link_function: str = 'probability_correct'
+    type2_fitting_type: str = 'criteria'
+    type2_noise_type: str = 'noisy_report'
+    type2_noise_dist: str = None
+        # noisy-report + criteria -> 'truncated_norm_mode'
+        # noisy-report + continuous -> 'truncated_norm_mode'
+        # noisy-readout + criteria -> 'truncated_norm_mode'
+        # noisy-readout + continuous -> 'truncated_norm_mode'
+        # noisy-temperature + criteria -> 'lognorm_mode'
+        # noisy-temperature + continuous -> 'truncated_norm_mode'
 
-    enable_warping_sens: int = 0
-    enable_noise_sens: int = 1
-    enable_thresh_sens: int = 0
-    enable_bias_sens: int = 1
-    enable_noise_meta: int = 1
-    enable_evidence_bias_mult_meta: int = 1
-    enable_evidence_bias_add_meta: int = 0
-    enable_confidence_bias_mult_meta: int = 0
-    enable_confidence_bias_add_meta: int = 0
-    enable_confidence_bias_pow_meta: int = 0
-    enable_criteria_meta: int = 0
-    enable_levels_meta: int = 0
+    enable_type1_param_noise: int = 1
+    enable_type1_param_thresh: int = 0
+    enable_type1_param_bias: int = 1
+    enable_type2_param_noise: int = 1
+    enable_type2_param_evidence_bias_mult: int = 0
+    enable_type2_param_criteria: int = 1
     # Experimental:
-    enable_noise_transform_sens: int = 0
-    enable_noise_transform_meta: int = 0
-    enable_evidence_bias_mult_postnoise_meta: int = 0
+    enable_type1_param_noise_heteroscedastic: int = 0
 
-    paramset_sens: ParameterSet = None
-    paramset_meta: ParameterSet = None
+    n_discrete_confidence_levels: int = 5
 
-    warping_sens: Union[Parameter, List[Parameter]] = None
-    noise_sens: Union[Parameter, List[Parameter]] = None
-    noise_transform_sens: Union[Parameter, List[Parameter]] = None
-    thresh_sens: Union[Parameter, List[Parameter]] = None
-    bias_sens: Union[Parameter, List[Parameter]] = None
-    noise_meta: Union[Parameter, List[Parameter]] = None
-    noise_transform_meta: Union[Parameter, List[Parameter]] = None
-    evidence_bias_mult_meta: Union[Parameter, List[Parameter]] = None
-    evidence_bias_add_meta: Union[Parameter, List[Parameter]] = None
-    evidence_bias_mult_postnoise_meta: Union[Parameter, List[Parameter]] = None
-    confidence_bias_mult_meta: Union[Parameter, List[Parameter]] = None
-    confidence_bias_add_meta: Union[Parameter, List[Parameter]] = None
-    confidence_bias_pow_meta: Union[Parameter, List[Parameter]] = None
+    paramset_type1: ParameterSet = None
+    paramset_type2: ParameterSet = None
 
-    constraints_sens_callable: Callable = None
-    constraints_meta_callable: Callable = None
+    type1_param_noise_heteroscedastic: Parameter = Parameter(guess=0, bounds=(0, 10), grid_range=np.linspace(0, 1, 5))
+    type1_param_noise: Parameter = Parameter(guess=0.5, bounds=(0.001, 100), grid_range=np.linspace(0.1, 1, 8))
+    type1_param_thresh: Parameter = Parameter(guess=0, bounds=(0, 1), grid_range=np.linspace(0, 0.2, 5))
+    type1_param_bias: Parameter = Parameter(guess=0, bounds=(-1, 1), grid_range=np.linspace(-0.2, 0.2, 8))
+    type2_param_noise: Parameter = Parameter(guess=0.1, bounds=(0.05, 2), grid_range=np.linspace(0.1, 1, 8))
+    type2_param_evidence_bias_mult: Parameter = Parameter(guess=1, bounds=(0.5, 2), grid_range=np.linspace(0.5, 2, 8))
+    type2_param_criteria: Parameter = Parameter(bounds=(1e-8, 1))
+    type2_param_criteria_guesses: str | List[float] = 'equidistant'
+    type2_param_criteria_grid_ranges: str | List[np.ndarray] = 'equidistant'
 
-    function_warping_sens: str = 'power'
-    function_noise_transform_sens: str = 'multiplicative'
-    function_noise_transform_meta: str = 'multiplicative'
+    type1_noise_signal_dependency: str = 'none'
 
-    gridsearch: bool = True
+    skip_type2 = False
+
+    gridsearch: bool = False
     fine_gridsearch: bool = False
     grid_multiproc: bool = False
-    global_minimization: bool = False
-    gradient_method: str = 'slsqp'
-    gradient_free: bool = None
+    minimize_along_grid: bool = False
+    global_minimization: str = None
+    minimize_solver: str | List[str] | Tuple[str, ...] = ('slsqp', 'Nelder-Mead')
     slsqp_epsilon: float = None
-    init_nelder_mead: bool = False
 
     normalize_stimuli_by_max: bool = True
     confidence_bounds_error: float = 0
 
-    min_likelihood_meta: float = 1e-10
-    min_likelihood_sens: float = 1e-10
-    binsize_meta: float = 1e-1
-    max_dv_deviation: int = 5
-    nbins_dv: int = 101
-    experimental_likelihood: bool = False
-    experimental_wrap_binsize_meta: bool = False
-    experimental_include_incongruent_dv: bool = False
+    min_type2_likelihood: float = 1e-10
+    min_type1_likelihood: float = 1e-10
+    type2_binsize: float = 0.01
+    y_decval_range_nsds: int = 5
+    y_decval_range_nbins: int = 101
+    resolution_noisy_temperature: float = 0.001
+
+    experimental_min_uniform_type2_likelihood: bool = False
+    experimental_wrap_type2_integration_window: bool = False
+    experimental_include_incongruent_y_decval: bool = False
+    experimental_disable_type2_binsize: bool = False
 
     true_params: Dict = None
-    force_settings: bool = False
-    settings_ignore_warnings: bool = False
+    initilialize_fitting_at_true_params: bool = False
+    silence_configuration_warnings: bool = False
     print_configuration: bool = False
 
-    noise_sens_default: float = 0.001
-    noise_meta_default: float = 0.1
-    noise_meta_min: float = 0.001
+    type2_param_noise_min: float = 0.001
 
-    _warping_sens_default: Parameter = Parameter(guess=0.1, bounds=(-10, 10), grid_range=np.arange(-10, 11, 5))
-    _noise_transform_sens_default: Parameter = Parameter(guess=0, bounds=(0, 10), grid_range=np.arange(0, 1.1, 0.25))
-    _noise_sens_default: Parameter = Parameter(guess=0.1, bounds=(1e-3, 100), grid_range=np.arange(0.1, 0.9, 0.25))
-    _thresh_sens_default: Parameter = Parameter(guess=0, bounds=(0, 1), grid_range=np.arange(0, 0.41, 0.2))
-    _bias_sens_default: Parameter = Parameter(guess=0, bounds=(-1, 1), grid_range=np.arange(-0.1, 0.11, 0.1))
-    _noise_meta_default: Parameter = Parameter(guess=0.2, bounds=(1e-2, 1), grid_range=np.arange(0.05           , 1, 0.1))
-    _noise_transform_meta_default: Parameter = Parameter(guess=0, bounds=(0, 10),
-                                                         grid_range=np.arange(0, 1.1, 0.25))
-    _evidence_bias_mult_meta_default: Parameter = Parameter(guess=1, bounds=(0.5, 2),
-                                                            grid_range=np.arange(0.5, 2.01, 0.1))
-    _evidence_bias_add_meta_default: Parameter = Parameter(guess=0, bounds=(-0.5, 0.5),
-                                                           grid_range=np.arange(-0.2, 0.21, 0.1))
-    _evidence_bias_mult_postnoise_meta_default: Parameter = Parameter(guess=1, bounds=(0.1, 50),
-                                                                      grid_range=np.arange(0.2, 1.71, 0.3))
-    _confidence_bias_mult_meta_default: Parameter = Parameter(guess=1, bounds=(0.1, 10),
-                                                              grid_range=np.arange(0.5, 2.01, 0.3))
-    _confidence_bias_add_meta_default: Parameter = Parameter(guess=0, bounds=(-1, 1),
-                                                             grid_range=np.arange(-0.3, 0.31, 0.15))
-    _confidence_bias_pow_meta_default: Parameter = Parameter(guess=1, bounds=(0.2, 50),
-                                                             grid_range=np.arange(0.5, 2.1, 0.25))
-    _criterion_meta_default: Parameter = Parameter(guess=0, bounds=(1e-6, 50),
-                                                   grid_range=np.exp(np.linspace(0, np.log(2), 8)) - 0.9)
-    _level_meta_default: Parameter = Parameter(guess=0, bounds=(1e-6, 1),
-                                               grid_range=np.exp(np.linspace(0, np.log(2), 8)) - 0.9)
+    setup_called = False
 
-    def setup(self):
+    _type1_param_noise: Parameter | List[Parameter] = None
+    _type1_param_noise_heteroscedastic: Parameter | List[Parameter] = None
+    _type1_param_thresh: Parameter | List[Parameter] = None
+    _type1_param_bias: Parameter | List[Parameter] = None
+    _type2_param_noise: Parameter = None
+    _type2_param_evidence_bias_mult: Parameter = None
+    _type2_param_criteria: List[Parameter] = None
 
-        if self.gradient_free is None:
-            if '_criteria' in self.meta_link_function or '_transform' in self.meta_noise_dist:
-                self.gradient_free = True
-            else:
-                self.gradient_free = False
-
-        if self.slsqp_epsilon is None:
-            if self.meta_noise_type == 'noisy_readout':
-                self.slsqp_epsilon = 1e-4
-            else:
-                self.slsqp_epsilon = _slsqp_epsilon
-
-        if self._confidence_bias_mult_meta_default is None and (self.meta_noise_type == 'noisy_readout'):
-            self._confidence_bias_mult_meta_default = Parameter(guess=1, bounds=(0.1, 10),
-                                                                grid_range=np.arange(0.4, 1.01, 0.2))
+    def setup(self, generative_mode=False):
 
         if find_spec('multiprocessing_on_dill') is None:
             warnings.warn(f'Multiprocessing on dill is not installed. Setting grid_multiproc is changed to False.')
             self.grid_multiproc = False
 
-        self._check_compatibility()
+        self._prepare_params_type1()
+        if self.skip_type2:
+            if self.slsqp_epsilon is None:
+                self.slsqp_epsilon = 1e-5
+        else:
 
-        self._prepare_params_sens()
-        self._prepare_params_meta()
+            if self.type2_noise_dist is None:
+                if generative_mode:
+                    raise ValueError('In generative mode, you need to explicitly specify a type 2 noise distribution.')
+                else:
+                    if self.type2_noise_type == 'noisy_report':
+                        if (self.type2_fitting_type == 'criteria'):
+                            self.type2_noise_dist = 'truncated_norm_mode'
+                        else:
+                            self.type2_noise_dist = 'truncated_norm_mode'
+                    elif (self.type2_noise_type == 'noisy_readout'):
+                        if self.type2_fitting_type == 'criteria':
+                            self.type2_noise_dist = 'truncated_norm_mode'
+                        else:
+                            self.type2_noise_dist = 'truncated_norm_mode'
+                    elif self.type2_noise_type == 'noisy_temperature':
+                        if self.type2_fitting_type == 'criteria':
+                            self.type2_noise_dist = 'lognorm_mode'
+                        else:
+                            self.type2_noise_dist = 'truncated_norm_mode'
+
+            self._prepare_params_type2()
+            if self.slsqp_epsilon is None:
+                self.slsqp_epsilon = 1e-5
+
+            if self.type2_binsize is None:
+                self.type2_binsize = 0.01
+
+
+        self._check_compatibility(generative_mode=generative_mode)
+
         if self.print_configuration:
             self.print()
+        self.setup_called = True
 
-    def _check_compatibility(self):
+    def _check_compatibility(self, generative_mode=False):
 
-        if self.enable_noise_transform_meta:
-            text = 'Fitting signal-dependent metacognitive noise parameters leads to biased estimates (for currently ' \
-                   'unknown reasons) and is thus discouraged.'
-            if self.force_settings:
-                warnings.warn(text)
-            else:
-                raise ValueError(text)
-        # if self.enable_noise_transform_meta == 2:
-        #     warnings.warn('Fitting separate signal-dependent metacognitive noise parameters for the two stimulus '
-        #                   'categories leads to biased estimates (for currently unknown reasons) and is thus '
-        #                   'discouraged.')
+        if not self.silence_configuration_warnings:
 
+            if not self.skip_type2:
+                if not self.enable_type2_param_noise:
+                    warnings.warn(f'Setting enable_type2_param_noise=False was provided -> type2_param_noise is set to its default value '
+                                  f'({self._type2_param_noise_default}). You may change this value via the configuration.')
 
-        if not self.enable_criteria_meta and '_criteria' in self.meta_link_function:
-            raise ValueError('A criterion-based link function was set, but confidence criteria were not enabled.')
+                if (self.type2_noise_type == 'noisy_temperature') and self.type2_param_noise.default_changed and \
+                    (self.type2_param_noise.bounds[0] < 1e-5):
+                    warnings.warn('You manually changed the lower bound of the type 2 noise parameter for a '
+                                  'noisy-temperature model to a very low value (<1e-5). Be warned that this may result '
+                                  'in numerical instabilities that severely distort the likelihood computation.')
 
-        if not self.settings_ignore_warnings:
+                if not generative_mode:
+                    # If the configuration instance is used for generating data, we should not complain
+                    # about fitting issues.
 
-            if not self.enable_noise_meta:
-                warnings.warn(f'Setting enable_noise_meta=False was provided -> noise_meta is set to its default value '
-                              f'({self.noise_meta_default}). You may change this value via the configuration.')
+                    if self.enable_type2_param_criteria and self.enable_type2_param_evidence_bias_mult:
+                        warnings.warn(
+                            'enable_type2_param_criteria=True in combination with enable_type2_param_evidence_bias_mult=True\n'
+                            'can lead to biased parameter inferences. Use with caution.')
 
-            if self.enable_criteria_meta and '_criteria' not in self.meta_link_function:
-                self.enable_criteria_meta = 0
-                warnings.warn('Confidence criteria were enabled but no criterion-based link function was set -> '
-                              'auto-setting enable_criteria_meta = 0.')
-            if self.enable_levels_meta and '_criteria' not in self.meta_link_function:
-                self.enable_levels_meta = 0
-                warnings.warn('Confidence criteria were enabled but no criterion-based link function was set -> '
-                              'auto-setting enable_levels_meta = 0.')
-            if self.enable_levels_meta and not self.enable_criteria_meta:
-                self.enable_criteria_meta = self.enable_levels_meta
-                warnings.warn(f'Confidence leves were enabled, but confidence criteria not -> auto-setting'
-                              f'enable_criteria_meta = {self.enable_levels_meta}')
+                    if (self.type2_fitting_type == 'continuous') and self.enable_type2_param_criteria:
+                        raise ValueError("Setting type2_fitting_type='continuous' conflicts with enable_type2_param_criteria=1.'")
 
-            if self.meta_noise_type == 'noisy_readout':
-                if self.enable_confidence_bias_add_meta:
-                    warnings.warn('The setting enable_confidence_bias_add_meta has been enabled for a model of type '
-                                  'noisy-readout. This setting results in a link function that is not monotonically '
-                                  'increasing and likely leads to biased estimates.')
-                if self.enable_confidence_bias_mult_meta:
-                    warnings.warn('The setting enable_confidence_bias_mult_meta has been enabled for a model of type '
-                                  'noisy-readout. Use this only if you have strong reasons to belief that values of '
-                                  'this parameter are <= 1, since true values > 1 cannot be recovered for '
-                                  'noisy-readout models.')
+                    if (self.type2_fitting_type == 'criteria') and not self.enable_type2_param_criteria:
+                        warnings.warn("You selected type2_fitting_type='criteria', but did not enable type 2 criteria\n"
+                                      "(enable_type2_param_criteria=0). This works, but be mindful that the model\n"
+                                      "will assume equispaced ideal Bayesian observer criteria (respecting \n"
+                                      "the setting n_discrete_confidence_levels).")
 
-            if self.enable_criteria_meta and self.enable_evidence_bias_mult_meta:
-                self.enable_evidence_bias_mult_meta = 0
-                warnings.warn('Confidence criteria were enabled, which is in conflict with '
-                              'enable_evidence_bias_mult_meta > 0 -> auto-setting enable_evidence_bias_mult_meta = 0.')
+    def _prepare_params_type1(self):
+        if self.paramset_type1 is None:
 
-            if self.enable_criteria_meta and self.enable_evidence_bias_mult_postnoise_meta:
-                self.enable_evidence_bias_mult_postnoise_meta = 0
-                warnings.warn('Confidence criteria were enabled, which is in conflict with '
-                              'enable_evidence_bias_mult_postnoise_meta > 0 -> auto-setting '
-                              'enable_evidence_bias_mult_postnoise_meta = 0.')
-
-    def _prepare_params_sens(self):
-        if self.paramset_sens is None:
-
-            param_names_sens = []
-            params_sens = ('warping', 'noise', 'noise_transform', 'thresh', 'bias')
-            for param in params_sens:
-                if getattr(self, f'enable_{param}_sens'):
-                    param_names_sens += [f'{param}_sens']
-                    if getattr(self, f'{param}_sens') is None:
-                        param_default = getattr(self, f'_{param}_sens_default')
-                        if getattr(self, f'enable_{param}_sens') == 2:
-                            setattr(self, f'{param}_sens', [param_default, param_default])
+            param_names_type1 = []
+            params_type1 = ('noise', 'noise_heteroscedastic', 'thresh', 'bias')
+            for param in params_type1:
+                if getattr(self, f'enable_type1_param_{param}'):
+                    param_names_type1 += [f'type1_{param}']
+                    if getattr(self, f'_type1_param_{param}') is None:
+                        param_definition = getattr(self, f'type1_param_{param}')
+                        if getattr(self, f'enable_type1_param_{param}') == 2:
+                            setattr(self, f'_type1_param_{param}', [param_definition, param_definition])
                         else:
-                            setattr(self, f'{param}_sens', param_default)
+                            setattr(self, f'_type1_param_{param}', param_definition)
+                        if self.true_params is not None and self.initilialize_fitting_at_true_params and f'type2_{param}' in self.true_params:
+                            getattr(self, f'_type1_param_{param}').guess = self.true_params[f'type1_{param}']
 
-            parameters = {k: getattr(self, k) for k in param_names_sens}
-            self.paramset_sens = ParameterSet(parameters, param_names_sens)
+            parameters = {k: getattr(self, f"_type1_param_{k.split('type1_')[1]}") for k in param_names_type1}
+            self.paramset_type1 = ParameterSet(parameters, param_names_type1)
 
-        if self.constraints_sens_callable is None:
-            self.constraints_sens_callable = _constraints_sens_default
+    def _prepare_params_type2(self):
 
-    def _prepare_params_meta(self):
+        if self.paramset_type2 is None:
 
-        if self.paramset_meta is None:
+            if self.enable_type2_param_noise and self._type2_param_noise is None and not self.type2_param_noise.default_changed:
 
-            if self.enable_noise_meta and self.noise_meta is None:
-                if self.meta_noise_dist == 'beta':
-                    self._noise_meta_default.bounds = (1e-5, 0.5)
-                    self._noise_meta_default.grid_range = np.arange(0.05, 0.5, 0.05)
-                elif self.meta_noise_type == 'noisy_readout':
-                    self._noise_meta_default.bounds = (1e-5, 250)
+                lb = 0.05
+                self.type2_param_noise.bounds = dict(
+                    noisy_report = dict(
+                        beta_mean_std=(lb, 0.5),
+                        beta_mode_std=(lb, 1 / np.sqrt(12)),
+                        truncated_norm_mode_std=(lb, 1 / np.sqrt(12)),
+                        truncated_gumbel_mode_std=(lb, 1 / np.sqrt(12)),
+                        truncated_lognorm_mode_std=(lb, 1 / np.sqrt(12)),
+                        beta_mode=(lb, 1),
+                        truncated_norm_mode=(lb, 1),
+                        truncated_gumbel_mode=(lb, 1),
+                        truncated_lognorm_mode=(lb, 4),
+                        truncated_lognorm_mean=(lb, 4),
+                        truncated_lognorm=(lb, 4)
+                    ),
+                    noisy_readout = dict(
+                        lognorm_mean=(lb, 1),
+                        lognorm_mode=(lb, 1),
+                        gamma_mean_std=(lb, 1),
+                        lognorm_mean_std=(lb, 2),
+                        lognorm_mode_std=(lb, 2),
+                        lognorm_median_std=(lb, 2),
+                        gamma_mean_cv=(lb, 2),
+                        gamma_mean=(lb, 2),
+                        gamma_mode_std=(lb, 2),
+                        gamma_mode=(lb, 2),
+                        betaprime_mean_std=(lb, 2),
+                        truncated_norm_mode_std=(lb, 2),
+                        truncated_norm_mode=(lb, 2),
+                        truncated_gumbel_mode_std=(lb, 2),
+                        truncated_gumbel_mode=(lb, 2)
+                    ),
+                    noisy_temperature = dict(
+                        lognorm_mean=(lb, 1),
+                        gamma_mean_std=(lb, 1),
+                        lognorm_mean_std=(lb, 2),
+                        lognorm_median_std=(lb, 2),
+                        gamma_mean_cv=(lb, 2),
+                        gamma_mean=(lb, 2),
+                        gamma_mode_std=(lb, 2),
+                        gamma_mode=(lb, 2),
+                        betaprime_mean_std=(lb, 2),
+                        truncated_norm_mode_std=(lb, 2),
+                        truncated_norm_mode=(lb, 2),
+                        truncated_gumbel_mode_std=(lb, 2),
+                        truncated_gumbel_mode=(lb, 2),
+                        lognorm_mode=(lb, 4),
+                        lognorm_mode_std=(lb, 10),
+                    )
+                )[self.type2_noise_type][self.type2_noise_dist]
+                self.type2_param_noise.grid_range = np.exp(np.linspace(np.log(self.type2_param_noise.bounds[0]),
+                                                                       np.log(self.type2_param_noise.bounds[1]), 10)[1:-1])
 
-            param_names_meta = []
-            params_meta = ('noise', 'noise_transform', 'evidence_bias_mult', 'evidence_bias_add',
-                           'evidence_bias_mult_postnoise', 'confidence_bias_mult', 'confidence_bias_add',
-                           'confidence_bias_pow')
-            for param in params_meta:
-                if getattr(self, f'enable_{param}_meta'):
-                    param_names_meta += [f'{param}_meta']
-                    if getattr(self, f'{param}_meta') is None:
-                        param_default = getattr(self, f'_{param}_meta_default')
-                        if getattr(self, f'enable_{param}_meta') == 2:
-                            setattr(self, f'{param}_meta', [param_default.copy(), param_default.copy()])
-                        else:
-                            setattr(self, f'{param}_meta', param_default.copy())
+            param_names_type2 = []
+            params_type2 = ('noise', 'evidence_bias_mult')
+            for param in params_type2:
+                if getattr(self, f'enable_type2_param_{param}'):
+                    param_names_type2 += [f'type2_{param}']
+                    if getattr(self, f'_type2_param_{param}') is None:
+                        param_definition = getattr(self, f'type2_param_{param}')
+                        setattr(self, f'_type2_param_{param}', param_definition.copy())
+                        if self.true_params is not None and self.initilialize_fitting_at_true_params and f'type2_{param}' in self.true_params:
+                            getattr(self, f'_type2_param_{param}').guess = self.true_params[f'type2_{param}']
 
-            if self.enable_criteria_meta and '_criteria' in self.meta_link_function:  # noqa
-                ncriteria_meta = int(self.meta_link_function.split('_')[0])
-                guess_criteria = np.linspace(1 / (ncriteria_meta + 1), 1 - 1 / (ncriteria_meta + 1), ncriteria_meta)
 
-                for i in range(ncriteria_meta):
-                    if not hasattr(self, f'criterion{i}_meta') or getattr(self, f'criterion{i}_meta') is None:  # noqa
-                        param_names_meta += [f'criterion{i}_meta']
-                        param_default = self._criterion_meta_default.copy()
-                        param_default.guess = guess_criteria[i]
-                        if self.enable_criteria_meta == 2:
-                            setattr(self, f'criterion{i}_meta', [param_default.copy(), param_default.copy()])
-                        else:
-                            setattr(self, f'criterion{i}_meta', param_default)
-                    if self.enable_levels_meta and \
-                            (not hasattr(self, f'level{i}_meta') or getattr(self, f'level{i}_meta') is None):
-                        param_names_meta += [f'level{i}_meta']
-                        param_default = self._level_meta_default.copy()
-                        param_default.guess = guess_criteria[i]
-                        if self.enable_levels_meta == 2:
-                            setattr(self, f'level{i}_meta', [param_default.copy(), param_default.copy()])
-                        else:
-                            setattr(self, f'level{i}_meta', param_default)
+            if self.enable_type2_param_criteria:
+                param_names_type2 += [f'type2_criteria']
+                initialize_true = (self.initilialize_fitting_at_true_params and
+                                   self.true_params is not None and 'type2_criteria' in self.true_params)
+                setattr(self, f'_type2_param_criteria',
+                        [Parameter(
+                           guess=self.true_params['type2_criteria'][i] if initialize_true
+                                    else (1 / self.n_discrete_confidence_levels if self.type2_param_criteria_guesses == 'equidistant'
+                                          else self.type2_param_criteria_guesses[i]),
+                           bounds=self.type2_param_criteria.bounds,
+                           grid_range=np.linspace(0.05, 2 / self.n_discrete_confidence_levels, 4) if
+                                self.type2_param_criteria_grid_ranges == 'equidistant' else self.type2_param_criteria_grid_ranges[i]
+                        )
+                         for i in range(self.n_discrete_confidence_levels - 1)]
+                        )
 
-            parameters = {k: getattr(self, k) for k in param_names_meta}
-            self.paramset_meta = ParameterSet(parameters, param_names_meta)
+            parameters = {k: getattr(self, f"_type2_param_{k.split('type2_')[1]}") for k in param_names_type2}
+            self.paramset_type2 = ParameterSet(parameters, param_names_type2)
 
-        if self.constraints_meta_callable is None:
-            self.constraints_meta_callable = _constraints_meta_default
+
+        self.check_type2_constraints()
 
     def print(self):
         # print('***********************')
         print(f'{self.__class__.__name__}')
         for k, v in self.__dict__.items():
-            if not self.skip_meta or ('meta_' not in k and '_meta' not in k):
-                print('\n'.join([f'\t{k}: {v}']))
+            # if not self.skip_type2 or ('type2' not in k):
+            print('\n'.join([f'\t{k}: {v}']))
         # print('***********************')
 
     def __repr__(self):
@@ -493,49 +455,25 @@ class Configuration(ReprMixin):
         txt += '\n'.join([f'\t{k}: {v}' for k, v in self.__dict__.items()])
         return txt
 
-
-def _constraints_sens_default(remeta):
-    constraints = []
-    if remeta.cfg.enable_noise_transform_sens:
-        constraints += [{'type': 'ineq', 'fun': lambda x: np.min(remeta._negll_sens(x, return_noise=True)) - 0.001}]  # noqa
-    return constraints
-
-
-def _constraints_meta_default(remeta):
-    constraints = []
-
-    # Set constraints for the metacognitive noise slope
-    # Note that metacognitive noise is based on confidence in case of the noisy-report model and
-    # on metacognitive decision values in case of the noisy-readout model
-    if remeta.cfg.enable_noise_transform_meta:
-        constraints += [{'type': 'ineq', 'fun': lambda x: np.min(remeta.fun_meta_helper(x, return_noise=True,
-                                                                                        constraint_mode=True)) - 0.001}]
-
-    if '_criteria' in remeta.cfg.meta_link_function:
-        ncrit_meta = int(remeta.cfg.meta_link_function.split('_')[0])
-        # in case of a linear_tanh link function, the last parameter criterion corresponds to the slope of the tanh
-        ncrit_meta_ = ncrit_meta - 1 if 'linear_tanh' in remeta.cfg.meta_link_function else ncrit_meta
-        if remeta.cfg.enable_criteria_meta == 2:
-            def fun_criteria(x):
-                crit = remeta.fun_meta_helper(x, return_criteria=True, constraint_mode=True)
-                return np.sum([(crit[0][i] > (0 if i == 0 else crit[0][i - 1])) for i in range(ncrit_meta_)]) + \
-                    np.sum([(crit[1][i] > (0 if i == 0 else crit[1][i - 1])) for i in range(ncrit_meta_)]) - \
-                    2 * ncrit_meta_
-        else:
-            def fun_criteria(x):
-                crit = remeta.fun_meta_helper(x, return_criteria=True, constraint_mode=True)
-                return np.sum([(crit[i] > (0 if i == 0 else crit[i - 1])) for i in range(ncrit_meta_)]) - ncrit_meta_
-        constraints += [{'type': 'eq', 'fun': fun_criteria}]
-        if remeta.cfg.enable_levels_meta:
-            if remeta.cfg.enable_levels_meta == 2:
-                def fun_levels(x):
-                    lev = remeta.fun_meta_helper(x, return_levels=True, constraint_mode=True)
-                    return np.sum([(lev[0][i] > (0 if i == 0 else lev[0][i - 1])) for i in range(ncrit_meta)]) + \
-                        np.sum([(lev[1][i] > (0 if i == 0 else lev[1][i - 1])) for i in range(ncrit_meta)]) - \
-                        2 * ncrit_meta
-            else:
-                def fun_levels(x):
-                    lev = remeta.fun_meta_helper(x, return_levels=True, constraint_mode=True)
-                    return np.sum([(lev[i] > (0 if i == 0 else lev[i - 1])) for i in range(ncrit_meta)]) - ncrit_meta
-            constraints += [{'type': 'eq', 'fun': fun_levels}]
-    return constraints
+    def check_type2_constraints(self):
+        pass
+        # if self.enable_type2_param_criteria:
+        #     from scipy.optimize import NonlinearConstraint
+        #
+        #     def crit_order_fun_ineq(theta):
+        #         crit = theta[-self.n_discrete_confidence_levels + 1:]
+        #         return np.sum([-int(crit[i] <= (-1e-8 if i == 0 else crit[i - 1])) for i in range(len(crit))])
+        #
+        #     def crit_order_fun(theta):
+        #         return np.diff(theta[-self.n_discrete_confidence_levels + 1:])  # [k2 - k1, k3 - k2, ...]
+        #
+        #     eps = 1e-4  # minimum spacing between criteria
+        #     self.paramset_type2.constraints = [dict(
+        #         type='ineq',
+        #         fun=crit_order_fun_ineq,
+        #         constraint=NonlinearConstraint(
+        #             fun=crit_order_fun,
+        #             lb=np.full(self.n_discrete_confidence_levels - 2, eps),  # diff >= eps
+        #             ub=np.full(self.n_discrete_confidence_levels - 2, np.inf)
+        #         )
+        #     )]

@@ -1,80 +1,64 @@
 import warnings
 
 import numpy as np
-from scipy.special import erf, erfinv
-from scipy.special import factorial as fac
-from scipy.stats import norm
+from scipy.special import expit
 
 from .util import maxfloat
-from .util import _check_param, _check_criteria
+from .util import _check_param
 
 
-def warp(stimuli, warping, warping_function='power'):
+def check_criteria_sum(criteria):
     """
-    Nonlinear transducing.
+    Ensure that criteria sum up to at most 1
 
     Parameters
     ----------
-    stimuli : array-like
-        Array of signed stimulus intensity values, where the sign codes the stimulus category and the absolut value
-        codes the intensity. Must be normalized to [-1; 1].
-    warping : float
-        Warping factor. Negative (positive) values lead to logarithmic (exponential) transformations of the stimuli.
-    warping_function : str
-        Either 'power' or 'exponential'. Pass 'identity' to leave stimuli unchanged.
+    criteria : array-like of dtype float
+        Confidence criteria (typically provided as a list)
 
     Returns
     ----------
-    stimuli_warped : array-liked
-        Warped stimulus array.
+    criteria : array-like of dtype float
+        Transformed confidence criteria
     """
-    warping_ = _check_param(warping)
-    if warping_function == 'identity':
-        return stimuli
-    elif warping_function == 'power':
-        stimuli_warped = np.sign(stimuli)
-        stimuli_warped[stimuli < 0] *= np.abs(stimuli[stimuli < 0]) ** warping_[0]
-        stimuli_warped[stimuli >= 0] *= np.abs(stimuli[stimuli >= 0]) ** warping_[1]
-    elif warping_function == 'exponential':
-        stimuli_warped = np.sign(stimuli)
-        if np.abs(warping_[0]) > 1e-10:
-            stimuli_warped[stimuli < 0] *= np.abs(np.exp(warping_[0] * np.abs(stimuli[stimuli < 0])) - 1)
-        else:
-            stimuli_warped[stimuli < 0] = stimuli[stimuli < 0]
-        if np.abs(warping_[1]) > 1e-10:
-            stimuli_warped[stimuli >= 0] *= np.abs(np.exp(warping_[1] * np.abs(stimuli[stimuli >= 0])) - 1)
-        else:
-            stimuli_warped[stimuli >= 0] = stimuli[stimuli >= 0]
-    else:
-        raise ValueError(f"'{warping_function}' is not a valid warping function")
-
-    stimuli_warped /= np.max(np.abs(stimuli_warped))
-
-    return stimuli_warped
+    ind1 = np.where(np.cumsum(criteria) > 1)[0]
+    if len(ind1):
+        for i in ind1[1:]:
+            criteria[i] = 0
+        criteria[ind1[0]] = 1 - np.sum(criteria[:ind1[0]]) + 1e-8
+        # Note: we add 1e-8 to avoid edge cases due to floating point precision
+    return criteria
 
 
-def logistic(x, noise_sens):
+def logistic(x, type1_noise, squeeze=False):
     """
     Logistic function
 
     Parameters
     ----------
     x : array-like
-        This is typically a stimulus array or a transformed stimulus array (e.g. sensory decision values).
-    noise_sens : float
-        Sensory noise parameter.
+        This is typically a stimulus array or a transformed stimulus array (e.g. decision values).
+    type1_noise : float
+        Type 1 noise parameter.
 
     Returns
     ----------
     posterior : array-like
         Posterior probability under a logistic model.
     """
-    posterior = 1 / (1 + np.exp(-((np.pi / np.sqrt(3)) * x / np.maximum(noise_sens, 1.6e-4)).squeeze(),
-                                dtype=maxfloat))
+    if squeeze:
+        # posterior = 1 / (1 + np.exp(-((np.pi / np.sqrt(3)) * x / np.maximum(type1_noise, 0.001)).squeeze(),
+        #                             dtype=maxfloat))
+        posterior = expit(((np.pi / np.sqrt(3) * x) / np.maximum(type1_noise, 1e-8)).squeeze())
+    else:
+        # posterior = 1 / (1 + np.exp(-((np.pi / np.sqrt(3)) * x / np.maximum(type1_noise, 0.001)),
+        #                             dtype=maxfloat))
+        posterior = expit((np.pi / np.sqrt(3) * x) / np.maximum(type1_noise, 1e-8))
+
     return posterior.astype(np.float64)
 
 
-def logistic_inv(posterior, noise_sens):
+def logistic_inv(posterior, type1_noise):
     """
     Inverse logistic function
 
@@ -82,520 +66,293 @@ def logistic_inv(posterior, noise_sens):
     ----------
     posterior : array-like
         Posterior probability.
-    noise_sens : float
-        Sensory noise parameter.
+    type1_noise : float
+        Type 1 noise parameter.
 
     Returns
     ----------
     x : array-like
         See docstring of the logistic method.
     """
-    x = -(np.sqrt(3) * noise_sens / np.pi) * np.log(1 / posterior - 1)
+    x = -(np.sqrt(3) * type1_noise / np.pi) * np.log(1 / posterior - 1)
     return x
 
 
-def noise_sens_transform(stimuli, noise_sens=None, noise_transform_sens=None, thresh_sens=None,
-                         function_noise_transform_sens='multiplicative', **kwargs):  # noqa
+def compute_signal_dependent_type1_noise(x_stim, type1_noise=None, type1_thresh=None, type1_noise_heteroscedastic=None,
+                                         type1_noise_signal_dependency='none', **kwargs):  # noqa
     """
-    Sensory noise transformation.
+    Compute signal-dependent type 1 noise.
 
     Parameters
     ----------
-    stimuli : array-like
+    x_stim : array-like
         Array of signed stimulus intensity values, where the sign codes the stimulus category and the absolut value
         codes the intensity. Must be normalized to [-1; 1].
-    noise_sens : float or array-like
-        Sensory noise parameter.
-    noise_transform_sens : float or array-like
-        Signal-dependent sensory noise parameter.
-    thresh_sens: float or array-like
-        Sensory threshold.
-    function_noise_transform_sens : str
-        Define the signal dependency of sensory noise. One of 'multiplicative', 'power', 'exponential', 'logarithm'.
+    type1_noise : float or array-like
+        Type 1 noise parameter.
+    type1_thresh: float or array-like
+        Type 1 threshold.
+    type1_noise_heteroscedastic : float or array-like
+        Signal-dependent type 1 noise parameter.
+    type1_noise_signal_dependency : str
+        Define the signal dependency of type 1 noise. One of 'none', 'multiplicative', 'power', 'exponential', 'logarithm'.
     kwargs : dict
-        Conveniance parameter to avoid an error if irrelevant parameters are passed.
+        Convenience parameter to avoid an error if irrelevant parameters are passed.
 
     Returns
     ----------
-    noise_sens_transformed : array-like
-        Sensory noise array of shape stimuli.shape. Each stimulus is assigned a sensory noise parameter.
+    type1_noise_heteroscedastic : array-like
+        Signal-dependent (heteroscedastic) type 1 noise of shape stimuli.shape.
     """
-    noise_sens_ = _check_param(noise_sens)
-    noise_transform_sens_ = _check_param(noise_transform_sens)
-    thresh_sens_ = (0, 0) if thresh_sens is None else _check_param(thresh_sens)
-    noise_sens_transformed = np.ones(stimuli.shape)
-    neg, pos = stimuli < 0, stimuli >= 0
-    if noise_transform_sens is None:
-        noise_sens_transformed[neg] *= noise_sens_[0]
-        noise_sens_transformed[pos] *= noise_sens_[1]
-    elif function_noise_transform_sens == 'multiplicative':
-        noise_sens_transformed[neg] = np.sqrt(noise_sens_[0]**2 +
-            ((np.abs(stimuli[neg]) - thresh_sens_[0]) * noise_transform_sens_[0])**2)  # noqa
-        noise_sens_transformed[pos] = np.sqrt(noise_sens_[1]**2 +
-            ((np.abs(stimuli[pos]) - thresh_sens_[1]) * noise_transform_sens_[1])**2)  # noqa
-    elif function_noise_transform_sens == 'power':
-        noise_sens_transformed[neg] = np.sqrt(noise_sens_[0]**2 +
-            (np.abs(stimuli[neg]) - thresh_sens_[0]) ** (2 * noise_transform_sens_[0]))  # noqa
-        noise_sens_transformed[pos] = np.sqrt(noise_sens_[1]**2 +
-            (np.abs(stimuli[pos]) - thresh_sens_[1]) ** (2 * noise_transform_sens_[1]))  # noqa
-    elif function_noise_transform_sens == 'exponential':
-        noise_sens_transformed[neg] = np.sqrt(noise_sens_[0]**2 +
-            (np.exp(noise_transform_sens_[0] * (np.abs(stimuli[neg]) - thresh_sens_[0])) - 1)**2)  # noqa
-        noise_sens_transformed[pos] = np.sqrt(noise_sens_[1]**2 +
-            (np.exp(noise_transform_sens_[1] * (np.abs(stimuli[pos]) - thresh_sens_[1])) - 1)**2)  # noqa
-    elif function_noise_transform_sens == 'logarithm':
-        noise_sens_transformed[neg] = np.sqrt(noise_sens_[0]**2 +
-            np.log(noise_transform_sens_[0] * (np.abs(stimuli[neg]) - thresh_sens_[0]) + 1)**2)  # noqa
-        noise_sens_transformed[pos] = np.sqrt(noise_sens_[1]**2 +
-            np.log(noise_transform_sens_[1] * (np.abs(stimuli[pos]) - thresh_sens_[1]) + 1)**2)  # noqa
+
+    type1_noise_ = _check_param(type1_noise)
+    type1_heteroscedastic_ = _check_param(type1_noise_heteroscedastic)
+    type1_thresh_ = (0, 0) if type1_thresh is None else _check_param(type1_thresh)
+    type1_noise_heteroscedastic = np.ones(x_stim.shape)
+    neg, pos = x_stim < 0, x_stim >= 0
+    if type1_noise_signal_dependency == 'none':
+        type1_noise_heteroscedastic[neg] *= type1_noise_[0]
+        type1_noise_heteroscedastic[pos] *= type1_noise_[1]
+    elif type1_noise_signal_dependency == 'multiplicative':
+        type1_noise_heteroscedastic[neg] = np.sqrt(type1_noise_[0] ** 2 +
+                                                         ((np.abs(x_stim[neg]) - type1_thresh_[0]) * type1_heteroscedastic_[0]) ** 2)  # noqa
+        type1_noise_heteroscedastic[pos] = np.sqrt(type1_noise_[1] ** 2 +
+                                                         ((np.abs(x_stim[pos]) - type1_thresh_[1]) * type1_heteroscedastic_[1]) ** 2)  # noqa
+    elif type1_noise_signal_dependency == 'power':
+        type1_noise_heteroscedastic[neg] = np.sqrt(type1_noise_[0] ** 2 +
+                                                         (np.abs(x_stim[neg]) - type1_thresh_[0]) ** (2 * type1_heteroscedastic_[0]))  # noqa
+        type1_noise_heteroscedastic[pos] = np.sqrt(type1_noise_[1] ** 2 +
+                                                         (np.abs(x_stim[pos]) - type1_thresh_[1]) ** (2 * type1_heteroscedastic_[1]))  # noqa
+    elif type1_noise_signal_dependency == 'exponential':
+        type1_noise_heteroscedastic[neg] = np.sqrt(type1_noise_[0] ** 2 +
+                                                         (np.exp(type1_heteroscedastic_[0] * (np.abs(x_stim[neg]) - type1_thresh_[0])) - 1) ** 2)  # noqa
+        type1_noise_heteroscedastic[pos] = np.sqrt(type1_noise_[1] ** 2 +
+                                                         (np.exp(type1_heteroscedastic_[1] * (np.abs(x_stim[pos]) - type1_thresh_[1])) - 1) ** 2)  # noqa
+    elif type1_noise_signal_dependency == 'logarithm':
+        type1_noise_heteroscedastic[neg] = np.sqrt(type1_noise_[0] ** 2 +
+                                                         np.log(type1_heteroscedastic_[0] * (np.abs(x_stim[neg]) - type1_thresh_[0]) + 1) ** 2)  # noqa
+        type1_noise_heteroscedastic[pos] = np.sqrt(type1_noise_[1] ** 2 +
+                                                         np.log(type1_heteroscedastic_[1] * (np.abs(x_stim[pos]) - type1_thresh_[1]) + 1) ** 2)  # noqa
     else:
-        raise ValueError(f'{function_noise_transform_sens} is not a valid transform function for noise_sens')
+        raise ValueError(f'{type1_noise_signal_dependency} is not a valid function for type1_noise_signal_dependency')
 
-    return noise_sens_transformed
+    return type1_noise_heteroscedastic
 
 
-def _noise_sens_transform_pc(stimuli, dv_sens, evidence_bias_mult_postnoise_meta=None, noise_sens=None,
-                             noise_transform_sens=None, function_noise_transform_sens='multiplicative', **kwargs):  # noqa
+def type1_evidence_to_confidence(z1_type1_evidence,
+                                 type2_evidence_bias_mult=1,
+                                 type1_noise=None, type1_thresh=None,
+                                 type1_noise_heteroscedastic=None, type1_noise_signal_dependency='none',
+                                 y_decval=None, x_stim=None,
+                                 **kwargs):  # noqa
     """
-    Signal-dependent sensory noise transformation.
-    Helper function for the signal-dependent sensory noise transformation under a probability-correct (pc) link
-    function. In this case, sensory noise might be subject to a multiplicative metacognitive bias defined by
-    evidence_bias_mult_postnoise_meta.
-    """
-    noise_sens_ = _check_param(noise_sens)
-    evidence_bias_mult_postnoise_meta_ = _check_param(evidence_bias_mult_postnoise_meta)
-    noise_sens_transformed = np.full(dv_sens.shape, np.nan)
-    if (len(dv_sens.shape) > len(stimuli.shape)) or (stimuli.shape[-1] == 1):
-        stimuli = np.tile(stimuli, dv_sens.shape[-1])
-
-    noise_sens_neg = [noise_sens_[0] / evidence_bias_mult_postnoise_meta_[0],
-                      noise_sens_[1] / evidence_bias_mult_postnoise_meta_[0]]
-    noise_sens_transformed[(dv_sens < 0)] = \
-        noise_sens_transform(stimuli[dv_sens < 0], noise_sens_neg, noise_transform_sens=noise_transform_sens,
-                             function_noise_transform_sens=function_noise_transform_sens)
-    noise_sens_pos = [noise_sens_[0] / evidence_bias_mult_postnoise_meta_[1],
-                      noise_sens_[1] / evidence_bias_mult_postnoise_meta_[1]]
-    noise_sens_transformed[(dv_sens >= 0)] = \
-        noise_sens_transform(stimuli[dv_sens >= 0], noise_sens_pos, noise_transform_sens=noise_transform_sens,
-                             function_noise_transform_sens=function_noise_transform_sens)
-    return noise_sens_transformed
-
-
-def noise_meta_transform(confidence_or_dv_meta, dv_sens=None, noise_meta=None, noise_transform_meta=None,
-                         function_noise_transform_meta='multiplicative',
-                         ignore_warnings=False, **kwargs):  # noqa
-    """
-    Metacognitive noise transformation.
+    Transformation from type 1 evidence (z1) to confidence (c).
 
     Parameters
     ----------
-    confidence_or_dv_meta : array-like
-        Model-based absolute sensory decision values ("dv_meta") in case of a noisy-readout model or model-predicted
-        confidence in case of a noisy-report model.
-    dv_sens : array-like
-        Sensory decision values
-    noise_meta : float or array-like
-        Metacognitive noise parameter.
-    noise_transform_meta : float or array-like
-        Signal-dependent metacognitive noise parameter.
-    function_noise_transform_meta : array-like
-        Signal-dependent noise type. One of 'multiplicative', 'power', 'exponential', 'logarithm'.
-    ignore_warnings : bool
-        If True, ignore warnings within the method (currently not used).
-    kwargs : dict
-        Conveniance parameter to avoid an error if irrelevant parameters are passed.
-
-    Returns
-    ----------
-    noise_meta_transformed : array-like
-        Metacognitive noise array of shape confidence_or_dv_meta.shape.
-    """
-    noise_meta_ = _check_param(noise_meta)
-    noise_meta_transformed = np.full(confidence_or_dv_meta.shape, np.nan)
-    neg, pos = dv_sens < 0, dv_sens >= 0
-    if noise_transform_meta is None:
-        noise_meta_transformed[neg] = noise_meta_[0]
-        noise_meta_transformed[pos] = noise_meta_[1]
-    else:
-        noise_transform_meta_ = _check_param(noise_transform_meta)
-        if function_noise_transform_meta == 'multiplicative':
-            noise_meta_transformed[neg] = np.sqrt(noise_meta_[0]**2 +
-                                                  (confidence_or_dv_meta[neg] * noise_transform_meta_[0])**2)
-            noise_meta_transformed[pos] = np.sqrt(noise_meta_[1]**2 +
-                                                  (confidence_or_dv_meta[pos] * noise_transform_meta_[1])**2)
-        elif function_noise_transform_meta == 'test':
-            noise_meta_transformed[neg] = noise_meta_[0] + noise_transform_meta_[0] * np.abs(confidence_or_dv_meta[neg])
-            noise_meta_transformed[pos] = noise_meta_[1] + noise_transform_meta_[1] * np.abs(confidence_or_dv_meta[pos])
-        elif function_noise_transform_meta == 'power':
-            noise_meta_transformed[neg] = np.sqrt(noise_meta_[0]**2 +
-                                                  confidence_or_dv_meta[neg] ** (2 * noise_transform_meta_[0]))
-            noise_meta_transformed[pos] = np.sqrt(noise_meta_[1]**2 +
-                                                  confidence_or_dv_meta[pos] ** (2 * noise_transform_meta_[1]))
-        elif function_noise_transform_meta == 'exponential':
-            noise_meta_transformed[neg] = np.sqrt(noise_meta_[0]**2 +
-                (np.exp(noise_transform_meta_[0] * confidence_or_dv_meta[neg]) - 1)**2)  # noqa
-            noise_meta_transformed[pos] = np.sqrt(noise_meta_[1]**2 +
-                (np.exp(noise_transform_meta_[1] * confidence_or_dv_meta[pos]) - 1)**2)  # noqa
-        elif function_noise_transform_meta == 'logarithm':
-            noise_meta_transformed[neg] = np.sqrt(noise_meta_[0]**2 +
-                                                  np.log(noise_transform_meta_[0] * confidence_or_dv_meta[neg] + 1)**2)
-            noise_meta_transformed[pos] = np.sqrt(noise_meta_[1]**2 +
-                                                  np.log(noise_transform_meta_[1] * confidence_or_dv_meta[pos] + 1)**2)
-        else:
-            raise ValueError(f'{function_noise_transform_meta} is not a valid transform function for '
-                             f'noise_intercept_meta.')
-
-    # if np.any(noise_meta_transformed < 0.001):
-    #     noise_meta_transformed = np.maximum(noise_meta_transformed, 0.001)
-    # if not ignore_warning:
-    #     warnings.warn('Minimal noise_meta below 0.001. This should not happen. '
-    #                   'Setting minimal noise_meta = 0.001')
-    return noise_meta_transformed
-
-def link_function(dv_meta, link_fun, evidence_bias_mult_postnoise_meta=1, confidence_bias_mult_meta=1,
-                  confidence_bias_add_meta=0, confidence_bias_pow_meta=1, criteria_meta=None, levels_meta=None,
-                  noise_sens=None, noise_transform_sens=None, function_noise_transform_sens='linear',
-                  dv_sens=None, stimuli=None, constraint_mode=False,
-                  **kwargs):  # noqa
-    """
-    Link function.
-
-    Parameters
-    ----------
-    dv_meta : array-like
-        Model-based absolute sensory decision values ("dv_meta").
-    link_fun : str
-        Metacognitive link function. In case of criterion-based link functions {x} refers to the number of criteria.
-        Possible values: 'probability_correct', 'tanh', 'normcdf', 'erf', 'alg', 'guder', 'linear', 'identity',
-                         '{x}_criteria', '{x}_criteria_linear', '{x}_criteria_linear_tanh'
-    evidence_bias_mult_postnoise_meta : float or array-like
-        Multiplicative metacognitive bias parameter loading on evidence, but after application of readout noise.
-    confidence_bias_mult_meta : float or array-like
-        Multiplicative metacognitive bias parameter loading on confidence.
-    confidence_bias_add_meta : float or array-like
-        Additive metacognitive bias parameter loading on confidence.
-    confidence_bias_pow_meta : float or array-like
-        Power-law metacognitive bias parameter loading on confidence.
-    criteria_meta : array-like
-        Confidence criteria in case of a criterion-based link function.
-    levels_meta : array-like
-        Confidence levels in case of a criterion-based link function.
-    noise_sens : float or array-like
-        Sensory noise parameter.
-    noise_transform_sens : float or array-like
-        Signal-dependent sensory noise parameter.
-    function_noise_transform_sens : float or array-like
-        Signal-dependent sensory noise type. One of 'linear', 'power', 'exponential', 'logarithm'.
-    dv_sens : array-like
-        Sensory decision values.
-    stimuli : array-like
+    z1_type1_evidence : array-like
+        Evidence at the type 1 level (= absolute decision value).
+    type2_evidence_bias_mult : float or array-like
+        Multiplicative metacognitive bias parameter loading on evidence.
+    type1_noise : float or array-like
+        Type 1 noise parameter. Can be array-like in case of signal-dependent type 1 noise.
+    type1_noise_heteroscedastic : float or array-like
+        Signal-dependent type 1 noise parameter.
+    type1_noise_signal_dependency : str
+        Signal-dependent type 1 noise type. One of 'linear', 'power', 'exponential', 'logarithm'.
+    y_decval : array-like
+        Decision values.
+    x_stim : array-like
         Array of signed stimulus intensity values, where the sign codes the stimulus category and the absolut value
         codes the intensity.
-    constraint_mode : bool
-        If True, method runs during scipy optimize constraint testing and certain warnings are ignored.
     kwargs : dict
-        Conveniance parameter to avoid an error if irrelevant parameters are passed.
+        Convenience parameter to avoid an error if irrelevant parameters are passed.
 
     Returns
     ----------
-    confidence_pred : array-like
+    c_conf : array-like
         Model-predicted confidence.
     """
-    dv_meta = np.atleast_1d(dv_meta)
-    if dv_sens is None:
-        if hasattr(evidence_bias_mult_postnoise_meta, '__len__') or hasattr(confidence_bias_add_meta, '__len__') or \
-                hasattr(confidence_bias_mult_meta, '__len__'):
-            raise ValueError('Parameters evidence_bias_mult_postnoise_meta, confidence_bias_add_meta or '
-                             'confidence_bias_mult_meta appear to be sign-dependent (they have been passed as '
-                             'array-like), but dv_sens has not been provided.')
-        else:
-            dv_sens = dv_meta
-    evidence_bias_mult_postnoise_meta_ = _check_param(evidence_bias_mult_postnoise_meta)
-    confidence_bias_mult_meta_ = _check_param(confidence_bias_mult_meta)
-    confidence_bias_add_meta_ = _check_param(confidence_bias_add_meta)
-    confidence_bias_pow_meta_ = _check_param(confidence_bias_pow_meta)
-    if criteria_meta is not None:
-        criteria_meta_ = _check_criteria(criteria_meta)
-    if levels_meta is not None:
-        levels_meta_ = _check_criteria(levels_meta)
-    else:
-        levels_meta_ = None
+    z1_type1_evidence = np.atleast_1d(z1_type1_evidence)
 
-    if link_fun in ['tanh', 'normcdf', 'erf', 'alg', 'guder', 'linear', 'identity']:
-        lf = dict(
-            tanh=lambda x, xsign, slope:
-            (xsign < 0) * np.tanh(slope[0] * np.abs(x)) +
-            (xsign >= 0) * np.tanh(slope[1] * np.abs(x)),
-            normcdf=lambda x, xsign, slope:
-            (xsign < 0) * 2 * (norm(scale=slope[0]).cdf(np.abs(x)) - 0.5) +
-            (xsign >= 0) * 2 * (norm(scale=slope[1]).cdf(np.abs(x)) - 0.5),
-            erf=lambda x, xsign, slope:
-            (xsign < 0) * erf(slope[0] * np.abs(x)) +
-            (xsign >= 0) * erf(slope[1] * np.abs(x)),
-            alg=lambda x, xsign, slope:
-            (xsign < 0) * slope[0] * np.abs(x) / np.sqrt(1 + (slope[0] * np.abs(x)) ** 2) +
-            (xsign >= 0) * slope[1] * np.abs(x) / np.sqrt(1 + (slope[1] * np.abs(x)) ** 2),
-            guder=lambda x, xsign, slope:
-            (xsign < 0) * (4 / np.pi) * np.arctan(np.tanh(slope[0] * np.abs(x))) +
-            (xsign >= 0) * (4 / np.pi) * np.arctan(np.tanh(slope[1] * np.abs(x))),
-            linear=lambda x, xsign, slope:
-            (xsign < 0) * np.minimum(1, slope[0] * np.abs(x)) +
-            (xsign >= 0) * np.minimum(1, slope[1] * np.abs(x)),
-            identity=lambda x, xsign, slope: np.abs(x)
-        )[link_fun]
-        confidence_pred = lf(dv_meta, dv_sens, evidence_bias_mult_postnoise_meta_)
-    elif link_fun == 'probability_correct':
-        if stimuli is None:
-            if noise_transform_sens is not None or hasattr(noise_sens, '__len__'):
-                raise ValueError('Sensory noise is sign- or intensity-dependent, but stimuli have not been '
-                                 'provided.')
-            else:
-                stimuli = dv_sens
-        noise_sens = _noise_sens_transform_pc(
-            stimuli, dv_sens, evidence_bias_mult_postnoise_meta=evidence_bias_mult_postnoise_meta_,
-            noise_sens=noise_sens, noise_transform_sens=noise_transform_sens,
-            noise_sens_function=function_noise_transform_sens
-        )
-        confidence_pred = np.tanh(np.pi * dv_meta / (2 * np.sqrt(3) * noise_sens))
-    elif 'crit' in link_fun:
-        if 'linear_tanh' in link_fun:
-            def lf(x, xsign, crit, levels=None):
-                slope_tanh_neg = crit[0][-1]  # by definition, the last criterion is the slope of the tanh component
-                slope_tanh_pos = crit[1][-1]  # by definition, the last criterion is the slope of the tanh component
-                critt_neg = np.array(crit[0][:-1])
-                critt_pos = np.array(crit[1][:-1])
-                if levels is None:
-                    level_neg = np.linspace(0, 1, len(critt_neg) + 2)  # confidence at the criteria
-                    level_pos = np.linspace(0, 1, len(critt_pos) + 2)  # confidence at the criteria
-                else:
-                    level_neg, level_pos = np.hstack((0, levels[0])), np.hstack((0, levels[1]))
-                crit0inf_neg = np.hstack((0, critt_neg, np.inf))  # add the edge cases of 0 and infinity
-                crit0inf_pos = np.hstack((0, critt_pos, np.inf))  # add the edge cases of 0 and infinity
+    if ((type1_noise_signal_dependency != 'none') or (hasattr(type1_noise, '__len__') and len(type1_noise) == 2)):
+        if x_stim is None:
+            raise ValueError('Type 1 noise is signal-dependent, but stimuli (x_stim) have not been '
+                             'passed.')
+        type1_noise = compute_signal_dependent_type1_noise(
+            x_stim.reshape(-1, 1) if (x_stim.ndim == 1) and (z1_type1_evidence.ndim == 2) else x_stim,
+            type1_noise=type1_noise, type1_thresh=type1_thresh, type1_noise_heteroscedastic=type1_noise_heteroscedastic,
+            type1_noise_signal_dependency=type1_noise_signal_dependency)
 
-                # the tanh function covers the space between the last (real) criterion and infinity (x-axis) and
-                # between the second-last and last criterion (y-axis):
-                def func_tanh_neg(x_):
-                    return (level_neg[-1] - level_neg[-2]) * \
-                           np.tanh(slope_tanh_neg * (x_ - crit0inf_neg[-2])) + level_neg[-2]
+    z2_type2_evidence = type2_evidence_bias_mult * z1_type1_evidence
+    c_conf = np.tanh(np.pi * z2_type2_evidence / (2 * np.sqrt(3) * type1_noise))
 
-                def func_tanh_pos(x_):
-                    return (level_neg[-1] - level_pos[-2]) * \
-                           np.tanh(slope_tanh_pos * (x_ - crit0inf_pos[-2])) + level_pos[-2]
-
-                with warnings.catch_warnings():
-                    # when constraints are tested, equal-value criterions may be tested, leading to a 'divide-by-zero'
-                    # warning; we ignore it, as affected criterions will be invalidated by a subsequent constraint
-                    warnings.simplefilter('ignore' if constraint_mode else 'default')  # noqa
-                    # compute slopes up until the last (real) criterion:
-                    slopes_neg = [(level_neg[i] - level_neg[i - 1]) / (crit0inf_neg[i] - crit0inf_neg[i - 1])
-                                  for i in range(1, len(critt_neg) + 1)]
-                    slopes_pos = [(level_pos[i] - level_pos[i - 1]) / (crit0inf_pos[i] - crit0inf_pos[i - 1])
-                                  for i in range(1, len(critt_pos) + 1)]
-                    # compute intercepts up until the last (real) criterion:
-                    intercepts_neg = [
-                        level_neg[i - 1] - crit0inf_neg[i - 1] * (level_neg[i] - level_neg[i - 1]) / (
-                                crit0inf_neg[i] - crit0inf_neg[i - 1]) for i in range(1, len(critt_neg) + 1)]
-                    intercepts_pos = [
-                        level_pos[i - 1] - crit0inf_pos[i - 1] * (level_pos[i] - level_pos[i - 1]) / (
-                                crit0inf_pos[i] - crit0inf_pos[i - 1]) for i in range(1, len(critt_pos) + 1)]
-                # conditions of the piecewise function:
-                cond_neg = [(x >= crit0inf_neg[i]) & (x < crit0inf_neg[i + 1]) for i in range(len(crit0inf_neg) - 1)]
-                cond_pos = [(x >= crit0inf_pos[i]) & (x < crit0inf_pos[i + 1]) for i in range(len(crit0inf_pos) - 1)]
-                # piecewise functions - linear until the last (real) criterion, then tanh:
-                func_neg = [(lambda x_, i=i: slopes_neg[i] * x_ + intercepts_neg[i])
-                            for i in range(len(critt_neg))] + [func_tanh_neg]
-                func_pos = [(lambda x_, i=i: slopes_pos[i] * x_ + intercepts_pos[i])
-                            for i in range(len(critt_pos))] + [func_tanh_pos]
-                return (xsign < 0) * np.piecewise(x, cond_neg, func_neg) + \
-                       (xsign >= 0) * np.piecewise(x, cond_pos, func_pos)
-        elif 'linear' in link_fun:
-            def lf(x, xsign, crit, levels=None):
-                critt_neg = np.array(crit[0])
-                critt_pos = np.array(crit[1])
-                if levels is None:
-                    level_neg = np.linspace(0, 1, len(critt_neg) + 1)  # confidence at the criteria
-                    level_pos = np.linspace(0, 1, len(critt_pos) + 1)  # confidence at the criteria
-                else:
-                    level_neg, level_pos = np.hstack((0, levels[0])), np.hstack((0, levels[1]))
-                crit0inf_neg = np.hstack((0, critt_neg, np.inf))  # add the edge cases of 0 and infinity
-                crit0inf_pos = np.hstack((0, critt_pos, np.inf))  # add the edge cases of 0 and infinity
-                with warnings.catch_warnings():
-                    # when constraints are tested equal-value criterions may be tested, leading to a 'divide-by-zero'
-                    # warning; we ignore it, as affected criterions will be invalidated by a subsequent constraint
-                    warnings.simplefilter('ignore' if constraint_mode else 'default')  # noqa
-                    slopes_neg = [(level_neg[i] - level_neg[i - 1]) /
-                                  (crit0inf_neg[i] - crit0inf_neg[i - 1]) for i in range(1, len(critt_neg) + 1)]
-                    slopes_pos = [(level_pos[i] - level_pos[i - 1]) /
-                                  (crit0inf_pos[i] - crit0inf_pos[i - 1]) for i in range(1, len(critt_pos) + 1)]
-                    intercepts_neg = \
-                        [level_neg[i - 1] - crit0inf_neg[i - 1] * ((level_neg[i] - level_neg[i - 1]) /
-                                                                   (crit0inf_neg[i] - crit0inf_neg[i - 1])) for i in
-                         range(1, len(critt_neg) + 1)]
-                    intercepts_pos = \
-                        [level_pos[i - 1] - crit0inf_pos[i - 1] * (level_pos[i] - level_pos[i - 1]) /
-                         (crit0inf_pos[i] - crit0inf_pos[i - 1]) for i in range(1, len(critt_pos) + 1)]
-                cond_neg = [(x >= crit0inf_neg[i]) & (x < crit0inf_neg[i + 1]) for i in range(len(crit0inf_neg) - 1)]
-                cond_pos = [(x >= crit0inf_pos[i]) & (x < crit0inf_pos[i + 1]) for i in range(len(crit0inf_pos) - 1)]
-                func_neg = [(lambda x_, i=i: slopes_neg[i] * x_ + intercepts_neg[i]) for i in range(len(critt_neg))] + \
-                           [lambda x_, i=None: level_neg[-1]]
-                func_pos = [(lambda x_, i=i: slopes_pos[i] * x_ + intercepts_pos[i]) for i in range(len(critt_pos))] + \
-                           [lambda x_, i=None: level_pos[-1]]
-                return (xsign < 0) * np.piecewise(x, cond_neg, func_neg) + \
-                       (xsign >= 0) * np.piecewise(x, cond_pos, func_pos)
-        else:
-            def lf(x, xsign, crit, levels=None):
-                conf = np.full(x.shape, np.nan)
-                levels_neg = np.linspace(0, 1, len(crit[0]) + 1) if levels is None else np.hstack(
-                    (0, levels[0]))  # noqa
-                levels_pos = np.linspace(0, 1, len(crit[1]) + 1) if levels is None else np.hstack(
-                    (0, levels[1]))  # noqa
-                conf[xsign < 0] = levels_neg[np.searchsorted(np.array(crit[0]), x[xsign < 0])]
-                conf[xsign >= 0] = levels_pos[np.searchsorted(np.array(crit[1]), x[xsign >= 0])]
-                return conf
-        confidence_pred = lf(dv_meta, dv_sens, criteria_meta_, levels_meta_)  # noqa
-    else:
-        raise ValueError(f'{link_fun} is not a valid link function for the metacognitive type noisy-report')
-
-    confidence_pred[dv_sens < 0] = (confidence_pred[dv_sens < 0] ** (1/confidence_bias_pow_meta_[0])) * \
-        confidence_bias_mult_meta_[0] + confidence_bias_add_meta_[0]
-    confidence_pred[dv_sens >= 0] = (confidence_pred[dv_sens >= 0] ** (1/confidence_bias_pow_meta_[1])) * \
-        confidence_bias_mult_meta_[1] + confidence_bias_add_meta_[1]
-    confidence_pred = np.maximum(0, np.minimum(1, confidence_pred))
-
-    return confidence_pred
+    return c_conf
 
 
-def link_function_inv(confidence, link_fun, evidence_bias_mult_postnoise_meta=1, confidence_bias_mult_meta=1,
-                      confidence_bias_add_meta=0, confidence_bias_pow_meta=1, criteria_meta=None,
-                      levels_meta=None, noise_sens=None, noise_transform_sens=None,
-                      function_noise_transform_sens='linear', dv_sens=None, stimuli=None,
-                      **kwargs):  ## noqa
+def confidence_to_type1_evidence(c_conf,
+                                 type2_evidence_bias_mult=1,
+                                 type1_noise=None, type1_thresh=None,
+                                 type1_noise_heteroscedastic=None, type1_noise_signal_dependency='none',
+                                 y_decval=None, x_stim=None,
+                                 tile_on_type1_uncertainty=True,
+                                 **kwargs):  ## noqa
     """
-    Inverse link function.
+    Transformation from confidence (c) to type 1 evidence (z1).
 
     Parameters
     ----------
-    confidence : array-like
+    c_conf : array-like
         Confidence ratings (from behavioral or simulated data).
-    link_fun : str
-        Metacognitive link function. In case of criterion-based link functions {x} refers to the number of criteria.
-        Possible values: 'probability_correct', 'tanh', 'normcdf', 'erf', 'alg', 'guder', 'linear', 'identity',
-                         '{x}_criteria', '{x}_criteria_linear', '{x}_criteria_linear_tanh'
-    evidence_bias_mult_postnoise_meta : float or array-like
-        Multiplicative metacognitive bias parameter loading on evidence, but after application of readout noise.
-    confidence_bias_mult_meta : float or array-like
-        Multiplicative metacognitive bias parameter loading on confidence.
-    confidence_bias_add_meta : float or array-like
-        Additive metacognitive bias parameter loading on confidence.
-    confidence_bias_pow_meta : float or array-like
-        Power-law metacognitive bias parameter loading on confidence.
-    criteria_meta : array-like
-        Confidence criteria in case of a criterion-based link function.
-    levels_meta : array-like
-        Confidence levels in case of a criterion-based link function.
-    noise_sens : float or array-like
-        Sensory noise parameter.
-    noise_transform_sens : float or array-like
-        Signal-dependent sensory noise parameter.
-    function_noise_transform_sens : float or array-like
-        Signal-dependent sensory noise type. One of 'linear', 'power', 'exponential', 'logarithm'.
-    dv_sens : array-like
-        Sensory decision values.
-    stimuli : array-like
+    type2_evidence_bias_mult : float or array-like
+        Multiplicative metacognitive bias parameter loading on evidence.
+    type1_noise : float or array-like
+        Type 1 noise parameter. Can be array-like in case of signal-dependent type 1 noise.
+    type1_noise_heteroscedastic : float or array-like
+        Signal-dependent type 1 noise parameter.
+    type1_noise_signal_dependency : str
+        Signal-dependent type 1 noise type. One of 'linear', 'power', 'exponential', 'logarithm'.
+    y_decval : array-like
+        Decision values.
+    x_stim : array-like
         Array of signed stimulus intensity values, where the sign codes the stimulus category and the absolut value
         codes the intensity.
     kwargs : dict
-        Conveniance parameter to avoid an error if irrelevant parameters are passed.
+        Convenience parameter to avoid an error if irrelevant parameters are passed.
 
     Returns
     ----------
-    dv_meta : array-like
-        Absolute sensory decision values ('dv_meta').
+    z1_type1_evidence : array-like
+        Absolute decision values ('z1_type1_evidence').
     """
-    if dv_sens is None:
-        if hasattr(evidence_bias_mult_postnoise_meta, '__len__') or hasattr(confidence_bias_add_meta, '__len__') or \
-                hasattr(confidence_bias_mult_meta, '__len__'):
-            raise ValueError('Parameters evidence_bias_mult_postnoise_meta, confidence_bias_mult_meta or '
-                             'confidence_bias_add_meta appear to be sign-dependent (they have been passed as '
-                             'array-like), but dv_sens has not been provided.')
-        else:
-            dv_sens = confidence
-    else:
-        confidence = np.tile(confidence, dv_sens.shape[-1])
-    evidence_bias_mult_postnoise_meta_ = _check_param(evidence_bias_mult_postnoise_meta)
-    confidence_bias_add_meta_ = _check_param(confidence_bias_add_meta)
-    confidence_bias_mult_meta_ = _check_param(confidence_bias_mult_meta)
-    confidence_bias_pow_meta_ = _check_param(confidence_bias_pow_meta)
+    if tile_on_type1_uncertainty and y_decval is not None:
+        c_conf = np.tile(c_conf, y_decval.shape[-1])
 
-    confidence[dv_sens < 0] = ((confidence[dv_sens < 0] - confidence_bias_add_meta_[0]) / confidence_bias_mult_meta_[0]) ** (confidence_bias_pow_meta_[0])
-    confidence[dv_sens >= 0] = ((confidence[dv_sens >= 0] - confidence_bias_add_meta_[1]) / confidence_bias_mult_meta_[1]) ** (confidence_bias_pow_meta_[1])
-    confidence = np.minimum(1, confidence)
+    if ((type1_noise_signal_dependency != 'none') or (hasattr(type1_noise, '__len__') and len(type1_noise) == 2)):
+        if x_stim is None:
+            raise ValueError('Type 1 noise is signal-dependent, but stimuli (x_stim) have not been '
+                             'passed.')
+        type1_noise = compute_signal_dependent_type1_noise(
+            x_stim, type1_noise=type1_noise, type1_thresh=type1_thresh, type1_noise_heteroscedastic=type1_noise_heteroscedastic,
+            type1_noise_signal_dependency=type1_noise_signal_dependency)
 
-    if link_fun in ['tanh', 'erf', 'alg', 'guder', 'linear', 'logistic3']:
-        if link_fun != 'linear':
-            confidence = np.minimum(1 - 1e-8, confidence)  # confidence=1 not invertible
-        invlf = dict(
-            tanh=lambda x, xsign, slope: (xsign < 0) * (np.arctanh(x) / slope[0]) +
-                                         (xsign >= 0) * (np.arctanh(x) / slope[1]),
-            erf=lambda x, xsign, slope: (xsign < 0) * (erfinv(x) / slope[0]) +
-                                        (xsign >= 0) * (erfinv(x) / slope[1]),
-            alg=lambda x, xsign, slope: (xsign < 0) * ((x / np.sqrt(1 - x ** 2)) / slope[0]) +
-                                        (xsign >= 0) * ((x / np.sqrt(1 - x ** 2)) / slope[1]),
-            guder=lambda x, xsign, slope: (xsign < 0) * (np.arctanh(np.tan(np.pi * x / 4)) / slope[0]) +
-                                          (xsign >= 0) * (np.arctanh(np.tan(np.pi * x / 4)) / slope[1]),
-            linear=lambda x, xsign, slope: (xsign < 0) * (x / slope[0]) +
-                                           (xsign >= 0) * (x / slope[1]),
-        )[link_fun]
-        dv_meta = invlf(confidence, dv_sens, evidence_bias_mult_postnoise_meta_)
-    else:
-        if link_fun == 'probability_correct':
-            confidence = np.minimum(1 - 1e-8, confidence)
-            if stimuli is None:
-                if noise_transform_sens is not None or hasattr(noise_sens, '__len__'):
-                    raise ValueError('Sensory noise is sign- or intensity-dependent, but stimuli have not been '
-                                     'provided.')
-            else:
-                noise_sens = _noise_sens_transform_pc(
-                    stimuli, dv_sens, evidence_bias_mult_postnoise_meta=evidence_bias_mult_postnoise_meta_,
-                    noise_sens=noise_sens, noise_transform_sens=noise_transform_sens,
-                    function_noise_transform_sens=function_noise_transform_sens,
-                )
-            dv_meta = (2 * np.sqrt(3) * noise_sens / np.pi) * np.arctanh(confidence)
-        elif 'criteria_linear_tanh' in link_fun:
-            criteria_meta_ = _check_criteria(criteria_meta)
-            confidence = np.minimum(1 - 1e-8, confidence)  # confidence=1 not invertible
-            slope_tanh_neg = criteria_meta_[0][-1]  # the last criterion is the slope of tanh
-            slope_tanh_pos = criteria_meta_[1][-1]  # the last criterion is the slope of tanh
-            critt_neg = np.array(criteria_meta_[0][:-1])
-            critt_pos = np.array(criteria_meta_[1][:-1])
-            if levels_meta is None:
-                level_neg = np.linspace(0, 1, len(critt_neg) + 2)  # confidence at the criteria
-                level_pos = np.linspace(0, 1, len(critt_pos) + 2)  # confidence at the criteria
-            else:
-                levels_meta_ = _check_criteria(levels_meta)
-                level_neg, level_pos = np.hstack((0, levels_meta_[0])), np.hstack((0, levels_meta_[1]))
-            crit0inf_neg = np.hstack((0, critt_neg, np.inf))  # add the edge cases of 0 and infinity
-            crit0inf_pos = np.hstack((0, critt_pos, np.inf))  # add the edge cases of 0 and infinity
-            y = np.full(dv_sens.shape, np.nan)
-            for i in range(1, len(critt_neg) + 2):
-                m_neg = (crit0inf_neg[i] - crit0inf_neg[i - 1]) / (level_neg[i] - level_neg[i - 1])
-                m_pos = (crit0inf_pos[i] - crit0inf_pos[i - 1]) / (level_pos[i] - level_pos[i - 1])
-                cond_neg = (dv_sens < 0) & (confidence >= level_neg[i - 1]) & (confidence < level_neg[i])
-                cond_pos = (dv_sens >= 0) & (confidence >= level_pos[i - 1]) & (confidence < level_pos[i])
-                y[cond_neg] = m_neg * (confidence[cond_neg] - level_neg[i - 1]) + crit0inf_neg[i - 1]
-                y[cond_pos] = m_pos * (confidence[cond_pos] - level_pos[i - 1]) + crit0inf_pos[i - 1]
-            cond_neg = (dv_sens < 0) & (confidence >= level_neg[-2])
-            cond_pos = (dv_sens >= 0) & (confidence >= level_pos[-2])
-            y[cond_neg] = (np.arctanh(
-                np.minimum(1 - 1e-16, (confidence[cond_neg] - level_neg[-2]) / (level_neg[-1] - level_neg[-2]))) /
-                           slope_tanh_neg) + crit0inf_neg[-2]
-            y[cond_pos] = (np.arctanh(
-                np.minimum(1 - 1e-16, (confidence[cond_pos] - level_pos[-2]) / (level_pos[-1] - level_pos[-2]))) /
-                           slope_tanh_pos) + crit0inf_pos[-2]
-            dv_meta = y
-        elif 'criteria_linear' in link_fun:
-            raise ValueError("This model is not invertible.")
-        else:
-            raise ValueError(f'{link_fun} is not a valid link function for the metacognitive type noisy-readout')
+    c_conf = np.minimum(1 - 1e-8, c_conf)
+    z2_type2_evidence = (2 * np.sqrt(3) * type1_noise / np.pi) * np.arctanh(c_conf)
 
-    return dv_meta
+    z1_type1_evidence = z2_type2_evidence / type2_evidence_bias_mult
+
+
+    return z1_type1_evidence
+
+
+
+def confidence_to_type1_noise(c_conf,
+                              type2_evidence_bias_mult=1,
+                              type1_noise=None, type1_thresh=None,
+                              type1_noise_heteroscedastic=None, type1_noise_signal_dependency='none',
+                              y_decval=None, x_stim=None,
+                              tile_type1_uncertainty=False,
+                              **kwargs):  ## noqa
+    """
+    Transformation from confidence (c) to type 1 evidence (z1).
+
+    Parameters
+    ----------
+    c_conf : array-like
+        Confidence ratings (from behavioral or simulated data).
+    type2_evidence_bias_mult : float or array-like
+        Multiplicative metacognitive bias parameter loading on evidence.
+    type1_noise : float or array-like
+        Type 1 noise parameter. Can be array-like in case of signal-dependent type 1 noise.
+    type1_noise_heteroscedastic : float or array-like
+        Signal-dependent type 1 noise parameter.
+    type1_noise_signal_dependency : str
+        Signal-dependent type 1 noise type. One of 'linear', 'power', 'exponential', 'logarithm'.
+    y_decval : array-like
+        Decision values.
+    x_stim : array-like
+        Array of signed stimulus intensity values, where the sign codes the stimulus category and the absolut value
+        codes the intensity.
+    kwargs : dict
+        Convenience parameter to avoid an error if irrelevant parameters are passed.
+
+    Returns
+    ----------
+    z1_type1_evidence : array-like
+        Absolute decision values ('z1_type1_evidence').
+    """
+    if y_decval is None:
+        y_decval = c_conf
+    elif tile_type1_uncertainty:
+        c_conf = np.tile(c_conf, y_decval.shape[-1])
+
+    if ((type1_noise_signal_dependency != 'none') or (hasattr(type1_noise, '__len__') and len(type1_noise) == 2)):
+        raise ValueError('Signal-dependency or dual parameter mode not yet supported for type2 noise type '
+                         '"noisy_temperature"')
+        # if x_stim is None:
+        #     raise ValueError('Type 1 noise is signal-dependent, but stimuli (x_stim) have not been '
+        #                      'passed.')
+        # type1_noise = compute_signal_dependent_type1_noise(
+        #     x_stim, type1_noise=type1_noise, type1_thresh=type1_thresh, type1_noise_heteroscedastic=type1_noise_heteroscedastic,
+        #     type1_noise_signal_dependency=type1_noise_signal_dependency)
+
+    c_conf = np.maximum(1e-8, np.minimum(1 - 1e-8, c_conf))
+
+    z2_type2_evidence = np.abs(y_decval) * type2_evidence_bias_mult
+
+    type1_noise = (np.pi / (2 * np.sqrt(3))) * (z2_type2_evidence / np.arctanh(c_conf))
+
+    return type1_noise
+
+
+
+def type1_noise_to_confidence(type1_noise,
+                              type2_evidence_bias_mult=1,
+                              type1_thresh=None,
+                              type1_noise_heteroscedastic=None, type1_noise_signal_dependency='none',
+                              y_decval=None, x_stim=None,
+                              **kwargs):  # noqa
+    """
+    Transformation from type 1 evidence (z1) to confidence (c).
+
+    Parameters
+    ----------
+    z1_type1_evidence : array-like
+        Evidence at the type 1 level (= absolute decision value).
+    type2_evidence_bias_mult : float or array-like
+        Multiplicative metacognitive bias parameter loading on evidence.
+    type1_noise : float or array-like
+        Type 1 noise parameter. Can be array-like in case of signal-dependent type 1 noise.
+    type1_noise_heteroscedastic : float or array-like
+        Signal-dependent type 1 noise parameter.
+    type1_noise_signal_dependency : str
+        Signal-dependent type 1 noise type. One of 'linear', 'power', 'exponential', 'logarithm'.
+    y_decval : array-like
+        Decision values.
+    x_stim : array-like
+        Array of signed stimulus intensity values, where the sign codes the stimulus category and the absolut value
+        codes the intensity.
+    kwargs : dict
+        Convenience parameter to avoid an error if irrelevant parameters are passed.
+
+    Returns
+    ----------
+    c_conf : array-like
+        Model-predicted confidence.
+    """
+
+    if ((type1_noise_signal_dependency != 'none') or (hasattr(type1_noise, '__len__') and len(type1_noise) == 2)):
+        raise ValueError('Signal-dependency or dual parameter mode not yet supported for type2 noise type '
+                         '"noisy_temperature"')
+        # if x_stim is None:
+        #     raise ValueError('Type 1 noise is signal-dependent, but stimuli (x_stim) have not been '
+        #                      'passed.')
+        # type1_noise = compute_signal_dependent_type1_noise(
+        #     x_stim.reshape(-1, 1) if (x_stim.ndim == 1) and (z1_type1_evidence.ndim == 2) else x_stim,
+        #     type1_noise=type1_noise, type1_thresh=type1_thresh, type1_noise_heteroscedastic=type1_noise_heteroscedastic,
+        #     type1_noise_signal_dependency=type1_noise_signal_dependency)
+
+    z2_type2_evidence = type2_evidence_bias_mult * np.abs(y_decval)
+    c_conf = np.tanh(np.pi * z2_type2_evidence / (2 * np.sqrt(3) * type1_noise))
+
+    return c_conf
