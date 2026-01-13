@@ -645,7 +645,7 @@ def set_fontsize(label=None, xlabel=None, ylabel=None, tick=None, xtick=None, yt
 
 if __name__ == '__main__':
 
-    import remeta_v1.remeta as remeta
+    import remeta
     np.random.seed(42)  # make notebook reproducible
     import warnings
     warnings.filterwarnings('error')

@@ -1,17 +1,17 @@
 import pickle
 import numpy as np
-import remeta_v1.remeta as remeta
-from remeta_v1.remeta.gendata import simu_data  # noqa
+import remeta
+from remeta.gendata import simu_data  # noqa
 import os
 import pathlib
 import gzip
 
-# mode = 'default'
+mode = 'default'
 # mode = 'type1_only'
 # mode = 'type1_complex'
 # mode = 'type2_multiplicative_bias'
 # mode = 'noisy_readout'
-mode = 'noisy_temperature'
+# mode = 'noisy_temperature'
 
 
 bounds = np.arange(0, 0.81, 0.2)
