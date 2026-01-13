@@ -1,7 +1,7 @@
 Go directly to:
-- [**Installation**](https://github.com/coconeuro/remeta_v1/blob/main/INSTALL.md)
-- [**Basic Usage**](https://github.com/coconeuro/remeta_v1/blob/main/demo/basic_usage.ipynb)
-- [**Common use cases**](https://github.com/coconeuro/remeta_v1/blob/main/demo/common_use_cases.ipynb)
+- [**Installation**](https://github.com/coconeuro/remeta/blob/main/INSTALL.md)
+- [**Basic Usage**](https://github.com/coconeuro/remeta/blob/main/demo/basic_usage.ipynb)
+- [**Common use cases**](https://github.com/coconeuro/remeta/blob/main/demo/common_use_cases.ipynb)
 
 
 # ReMeta Toolbox
@@ -22,7 +22,7 @@ Three types of data are required to fit a model:
 A minimal example would be the following:
 ```python
 # Minimal example
-import remeta_v1 as remeta
+import remeta
 ds = remeta.load_dataset('default')  # load example dataset
 rem = remeta.ReMeta()
 rem.fit(ds.x_stim, ds.d_dec, ds.c_conf)
@@ -124,4 +124,4 @@ _Type 2 (metacognitive) parameters:_
 
 In addition, each type 1 parameter can be fitted in "duplex mode", such that separate values are fitted depending on the stimulus category.
 
-A more detailed guide to use the toolbox is provided in the following Jupyter notebook: [**Basic Usage**](https://github.com/coconeuro/remeta_v1/blob/main/demo/basic_usage.ipynb)
+A more detailed guide to use the toolbox is provided in the following Jupyter notebook: [**Basic Usage**](https://github.com/coconeuro/remeta/blob/main/demo/basic_usage.ipynb)
