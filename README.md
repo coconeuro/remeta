@@ -126,6 +126,8 @@ _Type 1 parameters_:
 - `type1_noise`: type 1 noise
 - `type1_bias`: type 1 bias towards one of the two stimulus categories
 - `type1_thresh`: a (sensory) threshold, building on the assumption that a certain minimal stimulus intensity is required to elicit behavior; use only if there are stimulus intensities close to threshold
+- `type1_nonlinear_encoding_gain`: gain parameter to control nonlinear encoding of the stimulus
+- `type1_nonlinear_encoding_transition`: transition parameter to control nonlinear encoding of the stimulus
 - `type1_noise_heteroscedastic`: parameter to specify stimulus-dependent type 1 noise (e.g. multiplicative noise)
 
 _Type 2 (metacognitive) parameters:_
