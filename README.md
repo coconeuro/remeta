@@ -2,6 +2,7 @@ Go directly to:
 - [**Installation**](https://github.com/coconeuro/remeta/blob/main/INSTALL.md)
 - [**Basic Usage**](https://github.com/coconeuro/remeta/blob/main/demo/basic_usage.ipynb)
 - [**Common use cases**](https://github.com/coconeuro/remeta/blob/main/demo/common_use_cases.ipynb)
+- [**Group estimation and priors**](https://github.com/coconeuro/remeta/blob/main/demo/group_estimation_priors.ipynb)
 
 
 # ReMeta Toolbox
