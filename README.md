@@ -14,11 +14,11 @@ The ReMeta toolbox allows researchers to estimate latent type 1 and type 2 param
 Three types of data are required to fit a model:
 
 <!---  Table --->
-| Type       | Variable |Description
-|------------|----------|----------|
-| Stimuli    | `x_stim`   | list/array of signed stimulus intensity values, where the sign codes the stimulus category and the absolute value codes the intensity. The stimuli should be normalized to [-1; 1], although there is a setting (`normalize_stimuli_by_max`) to auto-normalize stimuli         |
-| Choices    | `d_dec`    | list/array of choices coded as 0 (or alternatively -1) for the negative stimuli category and 1 for the positive stimulus category.         |
-| Confidence | `c_conf`   | list/array of confidence ratings. Confidence ratings must be normalized to [0; 1]. Discrete confidence ratings must be normalized accordingly (e.g., if confidence ratings are 1-4, subtract 1 and divide by 3).         |
+| Type       | Variable     |Description
+|------------|--------------|----------|
+| Stimuli    | `stimulus`   | list/array of signed stimulus intensity values, where the sign codes the stimulus category and the absolute value codes the intensity. The stimuli should be normalized to [-1; 1], although there is a setting (`normalize_stimuli_by_max`) to auto-normalize stimuli         |
+| Choices    | `choices`    | list/array of choices coded as 0 (or alternatively -1) for the negative stimuli category and 1 for the positive stimulus category.         |
+| Confidence | `confidence` | list/array of confidence ratings. Confidence ratings must be normalized to [0; 1]. Discrete confidence ratings must be normalized accordingly (e.g., if confidence ratings are 1-4, subtract 1 and divide by 3).         |
 
 A minimal example would be the following:
 ```python
