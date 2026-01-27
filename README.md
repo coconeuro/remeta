@@ -26,7 +26,7 @@ A minimal example would be the following:
 import remeta
 ds = remeta.load_dataset('default')  # load example dataset
 rem = remeta.ReMeta()
-rem.fit(ds.x_stim, ds.d_dec, ds.c_conf)
+rem.fit(ds.stimuli, ds.choices, ds.confidence)
 ```
 Output (for load_dataset):
 ```
