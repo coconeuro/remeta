@@ -2,11 +2,11 @@ import numpy as np
 from scipy.stats import norm, logistic as logistic_dist
 import warnings
 
-from .configuration import Configuration
-from .type2_dist import get_type2_dist
-from .transform import compute_signal_dependent_type1_noise, type1_evidence_to_confidence, check_criteria_sum
-from .util import _check_param, TAB, discretize_confidence_with_bounds, print_dataset_characteristics
-from .type2_SDT import type2roc, type2_SDT_MLE
+from remeta.configuration import Configuration
+from remeta.type2_dist import get_type2_dist
+from remeta.transform import compute_signal_dependent_type1_noise, type1_evidence_to_confidence, check_criteria_sum, compute_nonlinear_encoding
+from remeta.util import _check_param, TAB, discretize_confidence_with_bounds, print_dataset_characteristics
+from remeta.type2_SDT import type2roc, type2_SDT_MLE
 
 
 class Simulation:
@@ -22,18 +22,18 @@ class Simulation:
         self.params_type2 = {k: v for k, v in self.params.items() if k.startswith('type2_')}
         self.params_extra = params_extra
         self.cfg = cfg
-        self.x_stim = x_stim
-        self.x_stim_category = x_stim_category
-        self.d_dec = d_dec
+        self.stimuli = x_stim
+        self.stimuli_category = x_stim_category
+        self.choices = d_dec
         self.accuracy = x_stim_category == d_dec
         self.y_decval_latent = y_decval_latent
         self.y_decval = y_decval
         self.z1_type1_evidence_latent = z1_type1_evidence_latent
         self.z1_type1_evidence_base = z1_type1_evidence_base
         self.z1_type1_evidence = z1_type1_evidence
-        self.c_conf_latent = c_conf_latent
-        self.c_conf_base = c_conf_base
-        self.c_conf = c_conf
+        self.confidence_latent = c_conf_latent
+        self.confidence_base = c_conf_base
+        self.confidence = c_conf
         self.likelihood_dist = likelihood_dist
         self.type1_stats = type1_stats
         self.type2_stats = type2_stats
@@ -68,21 +68,28 @@ def simu_type1_responses(x_stim, params, cfg):
     type1_param_thresh = _check_param(params['type1_thresh']) if cfg.enable_type1_param_thresh else (0, 0)
     type1_param_bias = _check_param(params['type1_bias']) if cfg.enable_type1_param_bias else (0, 0)
 
-    y_decval_latent = np.full(x_stim.shape, np.nan)
-    y_decval_latent[x_stim < 0] = (np.abs(x_stim[x_stim < 0]) > type1_param_thresh[0]) * \
-                                   x_stim[x_stim < 0] + type1_param_bias[0]
-    y_decval_latent[x_stim >= 0] = (np.abs(x_stim[x_stim >= 0]) > type1_param_thresh[1]) * \
-                                    x_stim[x_stim >= 0] + type1_param_bias[1]
+    if cfg.enable_type1_param_nonlinear_encoding_gain:
+        x_stim_transform = compute_nonlinear_encoding(
+            x_stim, params['type1_nonlinear_encoding_gain'],
+            params['type1_nonlinear_encoding_transition'] if cfg.enable_type1_param_nonlinear_encoding_transition else None)
+    else:
+        x_stim_transform = x_stim
 
-    y_decval = y_decval_latent + logistic_dist(scale=type1_noise * np.sqrt(3) / np.pi).rvs(size=x_stim.shape)
+    y_decval_latent = np.full(x_stim_transform.shape, np.nan)
+    y_decval_latent[x_stim_transform < 0] = (np.abs(x_stim_transform[x_stim_transform < 0]) > type1_param_thresh[0]) * \
+                                   x_stim_transform[x_stim_transform < 0] + type1_param_bias[0]
+    y_decval_latent[x_stim_transform >= 0] = (np.abs(x_stim_transform[x_stim_transform >= 0]) > type1_param_thresh[1]) * \
+                                    x_stim_transform[x_stim_transform >= 0] + type1_param_bias[1]
+
+    y_decval = y_decval_latent + logistic_dist(scale=type1_noise * np.sqrt(3) / np.pi).rvs(size=x_stim_transform.shape)
     d_dec = (y_decval >= 0).astype(int)
 
     return y_decval_latent, y_decval, d_dec
 
 
-def simu_data(params, nsamples=1000, nsubjects=1, cfg=None, x_stim_external=None, verbose=True, x_stim_stepsize=0.02,
+def simu_data(params, nsubjects=1, nsamples=1000, cfg=None, stimuli_external=None, verbose=True, stimuli_stepsize=0.02,
               squeeze=False, warn_in_case_of_nondivisible_stepsize=False,
-              compute_stats=False, **kwargs):
+              compute_stats=True, **kwargs):
     params = params.copy()  # this variable can be modifed, thus better to make a copy
     if cfg is None:
         # Set configuration attributes that match keyword arguments
@@ -90,31 +97,31 @@ def simu_data(params, nsamples=1000, nsubjects=1, cfg=None, x_stim_external=None
         cfg = Configuration(**cfg_kwargs)
         for setting in cfg.__dict__:
             if setting.startswith('enable_'):
-                if setting.split('enable_')[1] not in params:
+                if setting.split('enable_')[1].replace('_param_', '_') not in params:
                     setattr(cfg, setting, 0)
-    if not cfg.setup_called:
-        cfg.setup(generative_mode=True)
+    # if not cfg.setup_called:
+    cfg.setup(generative_mode=True)
 
     if cfg.type2_noise_dist is None:
         cfg.type2_noise_dist = dict(noisy_report='truncated_norm_mode', noisy_readout='truncated_norm_mode', noisy_temperature='lognorm_mode')[cfg.type2_noise_type]
 
     # Make sure no unwanted parameters have been passed
-    for p in ('thresh', 'bias', 'noise_heteroscedastic'):
+    for p in ('thresh', 'bias', 'noise_heteroscedastic', 'nonlinear_encoding_gain', 'nonlinear_encoding_transition'):
         if not getattr(cfg, f'enable_type1_param_{p}'):
             params.pop(f'type1_{p}', None)
     for p in ('evidence_bias_mult', 'criteria'):
         if not getattr(cfg, f'enable_type2_param_{p}'):
             params.pop(f'type2_{p}', None)
 
-    if x_stim_external is None:
-        x_stim = generate_stimuli(nsubjects, nsamples, stepsize=x_stim_stepsize,
+    if stimuli_external is None:
+        x_stim = generate_stimuli(nsubjects, nsamples, stepsize=stimuli_stepsize,
                                   warn_in_case_of_nondivisible_stepsize=warn_in_case_of_nondivisible_stepsize)
     else:
-        x_stim = x_stim_external / np.max(np.abs(x_stim_external))
-        if x_stim_external.shape != (nsubjects, nsamples):
+        x_stim = stimuli_external / np.max(np.abs(stimuli_external))
+        if stimuli_external.shape != (nsubjects, nsamples):
             x_stim = np.tile(x_stim, (nsubjects, 1))
     x_stim_category = (np.sign(x_stim) > 0).astype(int)
-    y_decval_latent, y_decval, d_dec_grid = simu_type1_responses(x_stim, params, cfg)
+    y_decval_latent, y_decval, d_dec = simu_type1_responses(x_stim, params, cfg)
 
     if not cfg.skip_type2:
 
@@ -184,7 +191,7 @@ def simu_data(params, nsamples=1000, nsubjects=1, cfg=None, x_stim_external=None
     if squeeze:
         x_stim_category = x_stim_category.squeeze()
         x_stim = x_stim.squeeze()
-        d_dec_grid = d_dec_grid.squeeze()
+        d_dec = d_dec.squeeze()
         y_decval_latent = y_decval_latent.squeeze()
         y_decval = y_decval.squeeze()
         if not cfg.skip_type2:
@@ -195,7 +202,7 @@ def simu_data(params, nsamples=1000, nsubjects=1, cfg=None, x_stim_external=None
 
     simargs = dict(
         nsubjects=nsubjects, nsamples=nsamples, params=params, cfg=cfg,
-        x_stim_category=x_stim_category, x_stim=x_stim, d_dec=d_dec_grid,
+        x_stim_category=x_stim_category, x_stim=x_stim, d_dec=d_dec,
         y_decval=y_decval, y_decval_latent=y_decval_latent
     )
     if not cfg.skip_type2:
@@ -205,20 +212,20 @@ def simu_data(params, nsamples=1000, nsubjects=1, cfg=None, x_stim_external=None
         )
 
     if compute_stats:
-        accuracy = (x_stim_category == d_dec_grid).astype(int)
+        accuracy = (x_stim_category == d_dec).astype(int)
         type1_stats = dict(
             accuracy=np.mean(accuracy),
-            d1 = norm.ppf(min(1 - 1e-3, max(1e-3, d_dec_grid[x_stim_category == 1].mean()))) - \
-                 norm.ppf(min(1 - 1e-3, max(1e-3, d_dec_grid[x_stim_category == 0].mean().mean()))),
-            choice_bias=d_dec_grid.mean(),
+            d1 = norm.ppf(min(1 - 1e-3, max(1e-3, d_dec[x_stim_category == 1].mean()))) - \
+                 norm.ppf(min(1 - 1e-3, max(1e-3, d_dec[x_stim_category == 0].mean().mean()))),
+            choice_bias=d_dec.mean(),
         )
         simargs.update(type1_stats=type1_stats)
         if not cfg.skip_type2:
             bounds = np.arange(0, 0.81, 0.2)
-            fit = type2_SDT_MLE(x_stim_category, d_dec_grid, discretize_confidence_with_bounds(c_conf, bounds), len(bounds))
+            fit = type2_SDT_MLE(x_stim_category.flatten(), d_dec.flatten(), discretize_confidence_with_bounds(c_conf.flatten(), bounds), len(bounds))
             type2_stats = dict(
                 confidence=c_conf.mean(),
-                auroc2=type2roc(accuracy, c_conf),
+                auroc2=type2roc(accuracy.flatten(), c_conf.flatten()),
                 mratio=fit.M_ratio
             )
             simargs.update(type2_stats=type2_stats)
@@ -238,13 +245,16 @@ def simu_data(params, nsamples=1000, nsubjects=1, cfg=None, x_stim_external=None
 
 
 if __name__ == '__main__':
-    params_simulation = dict(
+    import warnings
+    warnings.filterwarnings('error')
+    params = dict(
         type1_noise=0.2,
         type1_thresh=0.2,
         type1_bias=0.2,
         type2_noise=0.2,
-        type2_evidence_bias_mult=1.2
+        # type2_evidence_bias_mult=1.2
     )
     options = dict(meta_noise_type='noisy_report', enable_type1_param_thresh=1, enable_type1_param_bias=1,
-                   enable_type2_param_evidence_bias_mult=1)
-    m = simu_data(1, 1000, params_simulation, **options)
+                   enable_type2_param_evidence_bias_mult=0, type2_noise_dist='beta_mode')
+    m = simu_data(params, nsubjects=1, nsamples=1000, **options)
+

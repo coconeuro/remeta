@@ -8,8 +8,13 @@ from dataclasses import fields, MISSING
 
 
 TAB = '    '
+SP2 = '  '
 maxfloat = np.float128 if hasattr(np, 'float128') else np.longdouble
 _slsqp_epsilon = np.sqrt(np.finfo(float).eps)  # scipy's default value for the SLSQP epsilon parameter
+
+
+class Struct:
+    pass
 
 
 class ReprMixin:
@@ -104,6 +109,16 @@ def reset_dataclass_on_init(cls):
     cls.__init__ = __init__
     return cls
 
+
+def listlike(x):
+    return np.array(x).ndim > 0
+
+
+def empty_list(n, *shapes_or_None):
+    if (len(shapes_or_None) == 1) and shapes_or_None[0] is None:
+        return [None] * n
+    else:
+        return [np.empty([shape[i] if listlike(shape) else shape for shape in shapes_or_None]) for i in range(n)]
 
 def _check_param(x):
     if hasattr(x, '__len__'):
@@ -234,3 +249,6 @@ def print_dataset_characteristics(sim):
         print(f'{TAB}M-Ratio: {sim.type2_stats['mratio']:.2f}')
         print(f'{TAB}AUROC2: {sim.type2_stats['auroc2']:.2f}')
     print('----------------------------------')
+
+if __name__ == '__main__':
+    empty_list(2, 3, [3, 4])[0].shape

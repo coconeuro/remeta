@@ -58,6 +58,8 @@ class Configuration(ReprMixin):
     enable_type1_param_noise_heteroscedastic : int (default: 0)
         Fit an additional type 1 noise parameter for signal-dependent type 1 noise (the type of dependency is
         defined via `type1_noise_signal_dependency`).
+    enable_type1_param_nonlinear_encoding_gain : int (default: 0)
+    enable_type1_param_nonlinear_encoding_transition : int (default: 0)
     enable_type1_param_thresh : int (default: 0)
         Fit a type 1 threshold.
     enable_type1_param_bias : int (default: 1)
@@ -83,14 +85,20 @@ class Configuration(ReprMixin):
     * parameters must be either defined as a Parameter instance or as List[Parameter] in case when separate values are
     * fitted for the positive and negative stimulus category/decision value).
     paramset_type1 : ParameterSet
-        Parameter set for the type 1 level.
+        Parameter set for the type 1 stage.
     paramset_type2 : ParameterSet
-        Parameter set for the type 2 level.
+        Parameter set for the type 2 stage.
+    paramset : ParameterSet
+        Parameter set for both stages.
 
     _type1_param_noise : Union[Parameter, List[Parameter]]  (default: 1)
         Parameter for type 1 noise.
     _type1_param_noise_heteroscedastic : Union[Parameter, List[Parameter]]  (default: 0)
         Parameter for signal-dependent type 1 noise.
+    _type1_param_nonlinear_encoding_gain : Union[Parameter, List[Parameter]]  (default: 0)
+        Gain parameter for nonlinear encoding (higher values -> stronger nonlinearity).
+    _type1_param_nonlinear_encoding_transition : Union[Parameter, List[Parameter]]  (default: 0)
+        Transition Parameter for nonlinear encoding ().
     type1_noise_signal_dependency: str (default: 'none')
         Can be one of 'none', 'multiplicative', 'power', 'exponential' or 'logarithm'.
     _type1_param_thresh : Union[Parameter, List[Parameter]] (default: 0)
@@ -106,28 +114,40 @@ class Configuration(ReprMixin):
 
     *** Skip type 2 fitting ***
     skip_type2 : bool (default: False)
-        If True, ignore type 2 settings in the setup of the model configuration & don't fit type 2 level.
+        If True, ignore type 2 settings in the setup of the model configuration & don't fit type 2 stage.
 
     *** Methodoligcal aspects of parameter fitting ***
-    * Note: this applies to the fitting of type 2 parameters only.
-    gridsearch : bool (default: False)
-        If True, perform initial (usually coarse) gridsearch search, based on the gridsearch defined for a Parameter.
-    fine_gridsearch : bool (default: False)
-        If True, perform an iteratively finer gridsearch search for each parameter.
-    grid_multiproc : bool (default: False)
-        If True, use all available cores for the gridsearch search. If False, use a single core.
-    minimize_along_grid : bool (default: False)
-        If True, do sqlqp minimization for at each grid point.
-    global_minimization : str (default: None)
+    optim_type1_gridsearch : bool (default: False)
+        If True, perform initial (usually coarse) gridsearch search for type 1 fitting, based on the gridsearch defined
+        for a Parameter.
+    optim_type1_fine_gridsearch : bool (default: False)
+        If True, perform an iteratively finer gridsearch search for each parameter (type 1).
+    optim_type1_minimize_along_grid : bool (default: False)
+        If True, do sqlqp minimization for at each grid point (type 1).
+    optim_type1_global_minimization : str (default: None)
         Use one of 'shgo', 'dual_annealing' 'differential_evolution' to start likelihood minimization with
-        a global minimizer.
-    minimize_solver : str or Tuple/List (default: ('slsqp', 'Nelder-Mead'))
-        Set scipy.optimize.minimize gradient method
+        a global minimizer (type 1).
+    optim_type1_scipy_solvers : str or Tuple/List (default: 'trust-constr')
+        Set scipy.optimize.minimize gradient method (type 1)
         If provided as Tuple/List, test different gradient methods and take the best
-    slsqp_epsilon : float or Tuple/List (default: None)
-        Set parameter epsilon parameter for the SLSQP optimization method.
+    optim_type2_gridsearch : bool (default: True)
+        If True, perform initial (usually coarse) gridsearch search for type 2 fitting, based on the gridsearch defined
+        for a Parameter.
+    optim_type2_fine_gridsearch : bool (default: False)
+        If True, perform an iteratively finer gridsearch search for each parameter (type 2).
+    optim_type2_minimize_along_grid : bool (default: False)
+        If True, do sqlqp minimization for at each grid point (type 2).
+    optim_type2_global_minimization : str (default: None)
+        Use one of 'shgo', 'dual_annealing' 'differential_evolution' to start likelihood minimization with
+        a global minimizer (type 2).
+    optim_type2_scipy_solvers : str or Tuple/List (default: ('slsqp', 'Nelder-Mead'))
+        Set scipy.optimize.minimize gradient method (type 2)
+        If provided as Tuple/List, test different gradient methods and take the best
+    optim_type2_slsqp_epsilon : float or Tuple/List (default: None)
+        Set parameter epsilon parameter for the SLSQP optimization method (type 2).
         If provided as Tuple/List, test different eps parameters and take the best
-
+    optim_grid_multiproc : bool (default: False)
+        If True, use all available cores for the gridsearch search. If False, use a single core.
 
     *** Preprocessing ***
     normalize_stimuli_by_max : bool (default: True)
@@ -190,13 +210,18 @@ class Configuration(ReprMixin):
     enable_type2_param_criteria: int = 1
     # Experimental:
     enable_type1_param_noise_heteroscedastic: int = 0
+    enable_type1_param_nonlinear_encoding_gain: int = 0
+    enable_type1_param_nonlinear_encoding_transition: int = 0
 
     n_discrete_confidence_levels: int = 5
 
     paramset_type1: ParameterSet = None
     paramset_type2: ParameterSet = None
+    paramset_all: ParameterSet = None
 
     type1_param_noise_heteroscedastic: Parameter = Parameter(guess=0, bounds=(0, 10), grid_range=np.linspace(0, 1, 5))
+    type1_param_nonlinear_encoding_gain: Parameter = Parameter(guess=0, bounds=(-8/9, 10), grid_range=np.linspace(-0.5, 1, 5))
+    type1_param_nonlinear_encoding_transition: Parameter = Parameter(guess=1, bounds=(0.01, 10), grid_range=np.linspace(0.01, 2, 5))
     type1_param_noise: Parameter = Parameter(guess=0.5, bounds=(0.001, 100), grid_range=np.linspace(0.1, 1, 8))
     type1_param_thresh: Parameter = Parameter(guess=0, bounds=(0, 1), grid_range=np.linspace(0, 0.2, 5))
     type1_param_bias: Parameter = Parameter(guess=0, bounds=(-1, 1), grid_range=np.linspace(-0.2, 0.2, 8))
@@ -210,13 +235,19 @@ class Configuration(ReprMixin):
 
     skip_type2 = False
 
-    gridsearch: bool = False
-    fine_gridsearch: bool = False
-    grid_multiproc: bool = False
-    minimize_along_grid: bool = False
-    global_minimization: str = None
-    minimize_solver: str | List[str] | Tuple[str, ...] = ('slsqp', 'Nelder-Mead')
-    slsqp_epsilon: float = None
+    optim_type1_gridsearch: bool = False
+    optim_type1_fine_gridsearch: bool = False
+    optim_type1_minimize_along_grid: bool = False
+    optim_type1_global_minimization: str = None
+    _optim_type1_scipy_solvers_default = 'trust-constr'
+    optim_type1_scipy_solvers: str | List[str] | Tuple[str, ...] = 'trust-constr'
+    optim_type2_gridsearch: bool = True
+    optim_type2_fine_gridsearch: bool = False
+    optim_type2_minimize_along_grid: bool = False
+    optim_type2_global_minimization: str = None
+    optim_type2_scipy_solvers: str | List[str] | Tuple[str, ...] = ('slsqp', 'Nelder-Mead')
+    optim_type2_slsqp_epsilon: float = None
+    optim_grid_multiproc: bool = False
 
     normalize_stimuli_by_max: bool = True
     confidence_bounds_error: float = 0
@@ -240,10 +271,12 @@ class Configuration(ReprMixin):
 
     type2_param_noise_min: float = 0.001
 
-    setup_called = False
+    # setup_called = False
 
     _type1_param_noise: Parameter | List[Parameter] = None
     _type1_param_noise_heteroscedastic: Parameter | List[Parameter] = None
+    _type1_param_nonlinear_encoding_transition: Parameter | List[Parameter] = None
+    _type1_param_nonlinear_encoding_gain: Parameter | List[Parameter] = None
     _type1_param_thresh: Parameter | List[Parameter] = None
     _type1_param_bias: Parameter | List[Parameter] = None
     _type2_param_noise: Parameter = None
@@ -254,13 +287,18 @@ class Configuration(ReprMixin):
 
         if find_spec('multiprocessing_on_dill') is None:
             warnings.warn(f'Multiprocessing on dill is not installed. Setting grid_multiproc is changed to False.')
-            self.grid_multiproc = False
+            self.optim_grid_multiproc = False
 
         self._prepare_params_type1()
         if self.skip_type2:
-            if self.slsqp_epsilon is None:
-                self.slsqp_epsilon = 1e-5
+            if self.optim_type2_slsqp_epsilon is None:
+                self.optim_type2_slsqp_epsilon = 1e-5
         else:
+
+            if self.enable_type1_param_thresh and \
+                (self.optim_type1_scipy_solvers == self._optim_type1_scipy_solvers_default):
+                self.optim_type1_scipy_solvers = ('trust-constr', 'Powell')
+
 
             if self.type2_noise_dist is None:
                 if generative_mode:
@@ -283,18 +321,19 @@ class Configuration(ReprMixin):
                             self.type2_noise_dist = 'truncated_norm_mode'
 
             self._prepare_params_type2()
-            if self.slsqp_epsilon is None:
-                self.slsqp_epsilon = 1e-5
+            if self.optim_type2_slsqp_epsilon is None:
+                self.optim_type2_slsqp_epsilon = 1e-5
 
             if self.type2_binsize is None:
                 self.type2_binsize = 0.01
 
+        self._prepare_params_all()
 
         self._check_compatibility(generative_mode=generative_mode)
 
         if self.print_configuration:
             self.print()
-        self.setup_called = True
+        # self.setup_called = True
 
     def _check_compatibility(self, generative_mode=False):
 
@@ -330,10 +369,10 @@ class Configuration(ReprMixin):
                                       "the setting n_discrete_confidence_levels).")
 
     def _prepare_params_type1(self):
-        if self.paramset_type1 is None:
+        # if self.paramset_type1 is None:
 
             param_names_type1 = []
-            params_type1 = ('noise', 'noise_heteroscedastic', 'thresh', 'bias')
+            params_type1 = ('noise', 'noise_heteroscedastic', 'nonlinear_encoding_gain', 'nonlinear_encoding_transition', 'thresh', 'bias')
             for param in params_type1:
                 if getattr(self, f'enable_type1_param_{param}'):
                     param_names_type1 += [f'type1_{param}']
@@ -343,7 +382,7 @@ class Configuration(ReprMixin):
                             setattr(self, f'_type1_param_{param}', [param_definition, param_definition])
                         else:
                             setattr(self, f'_type1_param_{param}', param_definition)
-                        if self.true_params is not None and self.initilialize_fitting_at_true_params and f'type2_{param}' in self.true_params:
+                        if self.true_params is not None and self.initilialize_fitting_at_true_params and f'type1_{param}' in self.true_params:
                             getattr(self, f'_type1_param_{param}').guess = self.true_params[f'type1_{param}']
 
             parameters = {k: getattr(self, f"_type1_param_{k.split('type1_')[1]}") for k in param_names_type1}
@@ -351,7 +390,7 @@ class Configuration(ReprMixin):
 
     def _prepare_params_type2(self):
 
-        if self.paramset_type2 is None:
+        # if self.paramset_type2 is None:
 
             if self.enable_type2_param_noise and self._type2_param_noise is None and not self.type2_param_noise.default_changed:
 
@@ -435,12 +474,64 @@ class Configuration(ReprMixin):
                         )
                          for i in range(self.n_discrete_confidence_levels - 1)]
                         )
+                if self.true_params is not None:
+                    if isinstance(self.true_params, dict):
+                        # if 'type2_criteria' not in self.true_params:
+                        #     raise ValueError('type2_criteria are missing from cfg.true_params')
+                        if 'type2_criteria' in self.true_params:
+                            self.true_params.update(
+                                type2_criteria_absolute=[np.sum(self.true_params['type2_criteria'][:i+1]) for i in range(len(self.true_params['type2_criteria']))],
+                                type2_criteria_bias=np.mean(self.true_params['type2_criteria'])*(len(self.true_params['type2_criteria'])+1)-1
+                            )
+                    elif isinstance(self.true_params, list):
+                        for s in range(len(self.true_params)):
+                            # if 'type2_criteria' not in self.true_params[s]:
+                            #     raise ValueError(f'type2_criteria are missing from cfg.true_params (subject {s})')
+                            if 'type2_criteria' in self.true_params[s]:
+                                self.true_params[s].update(
+                                    type2_criteria_absolute=[np.sum(self.true_params[s]['type2_criteria'][:i+1]) for i in range(len(self.true_params[s]['type2_criteria']))],
+                                    type2_criteria_bias=np.mean(self.true_params[s]['type2_criteria'])*(len(self.true_params[s]['type2_criteria'])+1)-1
+                                )
 
             parameters = {k: getattr(self, f"_type2_param_{k.split('type2_')[1]}") for k in param_names_type2}
             self.paramset_type2 = ParameterSet(parameters, param_names_type2)
 
 
-        self.check_type2_constraints()
+            self.check_type2_constraints()
+
+
+    def _prepare_params_all(self):
+
+        if self.skip_type2:
+            self.paramset = self.paramset_type1
+        else:
+            parameters_all = {**self.paramset_type1.parameters, **self.paramset_type2.parameters}
+            param_names_all = self.paramset_type1.param_names + self.paramset_type2.param_names
+            self.paramset = ParameterSet(parameters_all, param_names_all)
+            # for k, attr in self.paramset_type2.__dict__.items():
+            #     attr_old = getattr(self.paramset, k)
+            #     if isinstance(attr, list):
+            #         attr_new = attr_old + attr
+            #     elif isinstance(attr, dict):
+            #         attr_new = {**attr_old, **attr}
+            #     elif isinstance(attr, np.ndarray):
+            #         if attr.ndim == 1:
+            #             attr_new = np.hstack((attr_old, attr))
+            #         else:
+            #             attr_new = np.vstack((attr_old, attr))
+            #     elif isinstance(attr, int):
+            #         attr_new = attr_old + attr
+            #     elif attr is None:
+            #         if attr_old is None:
+            #             attr_new = None
+            #         else:
+            #             raise ValueError(f'Type 2 attribute is None, but type 1 attribute is not.')
+            #     else:
+            #         raise ValueError(f'Unexpected type {type(attr)}')
+            #     setattr(self.paramset, k, attr_new)
+
+
+
 
     def print(self):
         # print('***********************')

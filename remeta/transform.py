@@ -78,6 +78,21 @@ def logistic_inv(posterior, type1_noise):
     return x
 
 
+def compute_nonlinear_encoding(x_stim, type1_nonlinear_encoding_gain=None, type1_nonlinear_encoding_transition=None):
+
+    gain = _check_param(0 if type1_nonlinear_encoding_gain is None else type1_nonlinear_encoding_gain)
+    transition = _check_param(1 if type1_nonlinear_encoding_transition is None else type1_nonlinear_encoding_transition)
+
+    neg, pos = x_stim < 0, x_stim >= 0
+    x_stim_nonlinear = np.empty_like(x_stim)
+    x_stim_nonlinear[neg] = x_stim[neg] * (1 + gain[0] * (x_stim[neg] / transition[0])**2 /
+                                           (1 + (x_stim[neg] / transition[0])**2))
+    x_stim_nonlinear[pos] = x_stim[pos] * (1 + gain[1] * (x_stim[pos] / transition[1])**2 /
+                                           (1 + (x_stim[pos] / transition[1])**2))
+
+    return x_stim_nonlinear
+
+
 def compute_signal_dependent_type1_noise(x_stim, type1_noise=None, type1_thresh=None, type1_noise_heteroscedastic=None,
                                          type1_noise_signal_dependency='none', **kwargs):  # noqa
     """

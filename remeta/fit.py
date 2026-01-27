@@ -9,10 +9,11 @@ try:  # only necessary if multiple cores should be used
     from multiprocessing_on_dill.pool import Pool as DillPool
 except ModuleNotFoundError:
     pass
+from datetime import datetime
 import scipy.optimize as sciopt
 from scipy.optimize._constraints import old_bound_to_new  # noqa
 
-from .util import TAB
+from .util import TAB, SP2
 from .util import _slsqp_epsilon
 
 def loop(fun, params, args, gridsize, minimize_along_grid, bounds, verbose, param_id):
@@ -54,7 +55,7 @@ def fine_grid_search(x0, fun, args, param_set, ll_grid, valid, gridsearch_resolu
     candidate_ids = list(range(n_grid_candidates_init))
     counter = 0
     for i in range(n_grid_iter):
-        if verbose:
+        if verbose and (np.mod(i, 10) == 0):
             print(f'{TAB}Grid iteration {i + 1} / {n_grid_iter}')
         gvalid = []
         valid_candidate_ids = []
@@ -101,23 +102,23 @@ def fine_grid_search(x0, fun, args, param_set, ll_grid, valid, gridsearch_resolu
     return fit
 
 
-def fmincon(fun, param_set, args, gridsearch=False, grid_multiproc=True, minimize_along_grid=False,
-            global_minimization=False, fine_gridsearch=False, verbose=True,
-            n_grid_candidates=10, n_grid_iter=3, minimize_solver='slsqp', slsqp_epsilon=_slsqp_epsilon,
-            guess=None):
+def subject_estimation(fun, param_set, args=(), gridsearch=False, grid_multiproc=True, minimize_along_grid=False,
+                       global_minimization=None, fine_gridsearch=False, verbose=True,
+                       n_grid_candidates=10, n_grid_iter=3, scipy_solvers='slsqp', slsqp_epsilon=_slsqp_epsilon,
+                       guess=None):
 
     t0 = timeit.default_timer()
 
-    if verbose:
-        negll_initial_guess = fun(param_set.guess, *args)
-        print(f'Initial guess (neg. LL: {negll_initial_guess:.2f})')
-        for i, p in enumerate(param_set.param_names_flat):
-            if p.startswith('type2_criteria') and not p.endswith('0'):
-                criterion_id = int(p.split('_')[-1])
-                criterion = param_set.guess[i-criterion_id:i+1].sum()
-                print(f'{TAB}[guess] {p}: {param_set.guess[i]:.4g} = gap | criterion = {criterion:.4g}')
-            else:
-                print(f'{TAB}[guess] {p}: {param_set.guess[i]:.4g}')
+    # if verbose:
+    #     negll_initial_guess = fun(param_set.guess, *args)
+    #     print(f'{TAB}{TAB}Initial guess (neg. LL: {negll_initial_guess:.2f})')
+    #     for i, p in enumerate(param_set.param_names_flat):
+    #         if p.startswith('type2_criteria') and not p.endswith('0'):
+    #             criterion_id = int(p.split('_')[-1])
+    #             criterion = param_set.guess[i-criterion_id:i+1].sum()
+    #             print(f'{TAB}{TAB}{TAB}[guess] {p}: {param_set.guess[i]:.4g} = gap | criterion = {criterion:.4g}')
+    #         else:
+    #             print(f'{TAB}{TAB}{TAB}[guess] {p}: {param_set.guess[i]:.4g}')
 
     bounds = sciopt.Bounds(*old_bound_to_new(param_set.bounds), keep_feasible=True)
 
@@ -133,7 +134,7 @@ def fmincon(fun, param_set, args, gridsearch=False, grid_multiproc=True, minimiz
         else:
             valid = list(product(*param_set.grid_range))
         if verbose:
-            print(f"Grid search activated (grid size = {len(valid)})")
+            print(f"{TAB}{TAB}Grid search activated (grid size = {len(valid)})")
         t0 = timeit.default_timer()
         ll_grid, x_grid = fgrid(fun, valid, args, grid_multiproc, minimize_along_grid, bounds, verbose=verbose)
         x0_grid = x_grid[np.argmin(ll_grid)]
@@ -144,11 +145,11 @@ def fmincon(fun, param_set, args, gridsearch=False, grid_multiproc=True, minimiz
                 if p.startswith('type2_criteria') and not p.endswith('0'):
                     criterion_id = int(p.split('_')[-1])
                     criterion = param_set.guess[i-criterion_id:i+1].sum()
-                    print(f'{TAB}[guess] {p}: {param_set.guess[i]:.4g} = gap | criterion = {criterion:.4g}')
+                    print(f'{TAB}{TAB}{TAB}[grid] {p}: {param_set.guess[i]:.4g} = gap | criterion = {criterion:.4g}')
                 else:
-                    print(f'{TAB}[grid] {p}: {x0_grid[i]:.4g}')
-            print(f"Grid neg. LL: {ll_min_grid:.1f}")
-            print(f"Grid runtime: {grid_time:.2f} secs")
+                    print(f'{TAB}{TAB}{TAB}[grid] {p}: {x0_grid[i]:.4g}')
+            print(f"{TAB}{TAB}Grid neg. LL: {ll_min_grid:.1f}")
+            print(f"{TAB}{TAB}Grid runtime: {grid_time:.2f} secs")
         fit_grid = sciopt.OptimizeResult(success=True, x=x0_grid, fun=ll_min_grid, nfev=len(valid))
         fit_best = fit_grid if ll_min_grid < fit_guess.fun else fit_guess
     else:
@@ -160,8 +161,8 @@ def fmincon(fun, param_set, args, gridsearch=False, grid_multiproc=True, minimiz
                                     n_grid_iter, grid_multiproc, verbose=verbose).x
 
     if global_minimization is not None:
-        if verbose:
-            print('Performing global optimization')
+        # if verbose:
+        #     print(f'{TAB}{TAB}Performing MLE (global minimization)')
         t_global = timeit.default_timer()
         # fit_global = basinhopping(fun, fit_best.x, take_step=RandomDisplacementBoundsConstraints(bounds, param_set.constraints),
         #                           accept_test=BoundsConstraints(bounds, param_set.constraints),
@@ -186,14 +187,18 @@ def fmincon(fun, param_set, args, gridsearch=False, grid_multiproc=True, minimiz
 
         execution_time_global = timeit.default_timer() - t_global
         x0_global = fit_global.x
+        if verbose:
+            print(f'{TAB}{TAB}{TAB}.. global MLE finished ({execution_time_global:.1f} secs).')
     else:
         x0_global = None
         execution_time_global = None
 
-    if verbose:
-        print('Performing local optimization')
+    # if verbose:
+    #     print(f'{TAB}{TAB}Performing MLE (local minimization)')
 
-    minimize_solver = [minimize_solver] if isinstance(minimize_solver, str) else minimize_solver
+    t_local = timeit.default_timer()
+
+    scipy_solvers = [scipy_solvers] if isinstance(scipy_solvers, str) else scipy_solvers
 
     # We start both from x0_guess and x0_grid, as x0_grid is more prone to local minima
     x0s = (x0_guess, x0_grid, x0_global)
@@ -201,7 +206,7 @@ def fmincon(fun, param_set, args, gridsearch=False, grid_multiproc=True, minimiz
     best_solver = f"init_{'guess' if x0_grid is None else 'grid'}" if global_minimization is None else global_minimization
     for i, x0 in enumerate(x0s):
         if x0 is not None:
-            for method in minimize_solver:
+            for method in scipy_solvers:
                 if method == 'slsqp':
                     slsqp_epsilon_ = slsqp_epsilon if hasattr(slsqp_epsilon, '__len__') else [slsqp_epsilon]
                     for eps in slsqp_epsilon_:
@@ -218,10 +223,194 @@ def fmincon(fun, param_set, args, gridsearch=False, grid_multiproc=True, minimiz
                         best_solver = f"{method}_init{('guess', 'grid', 'global')[i]}"
     fit_best.execution_time = timeit.default_timer() - t0  # noqa
     fit_best.execution_time_global = execution_time_global
+    fit_best.execution_time_local = timeit.default_timer() - t_local
     fit_best.best_solver = best_solver
     fit_best.x0_grid = x0_grid
+    # if verbose:
+    #     print(f'{TAB}{TAB}{TAB}.. local MLE finished ({fit_best.execution_time_local:.1f} secs).')
 
     return fit_best
+
+
+def group_estimation(fun, nsubjects, params_init, bounds, idx_fe, idx_re,
+                     max_iter=30, sigma_floor=1e-3, damping=0.5, verbose=False):
+
+    params_init = np.array(params_init)
+
+    if verbose:
+        print(f'\n{SP2}Group-level optimization (MLE / MAP)')
+    t0 = timeit.default_timer()
+
+    uparams_init = transform_to_unconstrained_space(params_init, bounds)
+
+    if len(idx_fe) > 0:
+        # Fixed effects init: take mean in (constrained) original space, invert-transform to unconstrained space
+        params_fe_init = np.median(params_init, axis=0)
+        uparams_fe = transform_to_unconstrained_space(params_fe_init, bounds)
+    else:
+        uparams_fe = None
+
+    if len(idx_re) > 0:
+        # init hyperparams from initial Z
+        uparams_mean = uparams_init.mean(axis=0)
+        uparams_sd = uparams_init.std(axis=0) + sigma_floor
+
+    for it in range(max_iter):
+
+        if len(idx_fe) > 0:
+            def objective_fe_packed(x_packed):
+                uparams_tmp = uparams_fe.copy()
+                uparams_tmp[idx_fe] = x_packed
+                return objective_group_fe(uparams_tmp, fun, uparams_init, bounds, idx_fe)
+
+            x0 = uparams_fe[idx_fe].copy()
+            uparams_fe[idx_fe] = sciopt.minimize(objective_fe_packed, x0=x0, method='L-BFGS-B').x
+
+        if len(idx_re) > 0:
+            for s in range(nsubjects):
+                res = sciopt.minimize(
+                    objective_empirical_bayes,
+                    x0=uparams_init[s],
+                    args=(s, fun, bounds, idx_re, uparams_mean, uparams_sd, idx_fe, uparams_fe),
+                    method='L-BFGS-B'
+                )
+                uparams_init[s] = res.x
+
+
+            # --- hyperparameter update (moment matching) ---
+            uparams_mean_new = uparams_mean.copy()
+            uparams_sd_new = uparams_sd.copy()
+
+            uparams_mean_new[idx_re] = uparams_init[:, idx_re].mean(axis=0)
+            uparams_sd_new[idx_re] = uparams_init[:, idx_re].std(axis=0)
+            uparams_sd_new[idx_re] = np.maximum(uparams_sd_new[idx_re], sigma_floor)
+
+            # damping for stability
+            uparams_mean = (1 - damping) * uparams_mean + damping * uparams_mean_new
+            uparams_sd = (1 - damping) * uparams_sd + damping * uparams_sd_new
+
+            # optional: check convergence
+            # if np.max(np.abs(uparams_re_init_mean - uparams_mean_new)) < 1e-4: break
+
+        if verbose and (np.mod(it, 10) == 0):
+            convergence_str = f' (Convergence: {np.max(np.abs(uparams_mean - uparams_mean_new)):.8f})' if len(idx_re) > 0 else ''
+            print(f'{TAB}{TAB}[{datetime.now().strftime('%H:%M:%S')}] Iteration {it+1} / {max_iter}{convergence_str}')
+
+    if len(idx_re) > 0:
+        params = transform_to_constrained_space(uparams_init, bounds)
+    else:
+        params = params_init
+    if len(idx_fe) > 0:
+        params[:, idx_fe] = transform_to_constrained_space(uparams_fe[idx_fe], bounds[idx_fe])
+
+    result = sciopt.OptimizeResult(x=params)
+    result.execution_time = timeit.default_timer() - t0
+    if len(idx_re) > 0:
+        result.x_re_pop_mean_sd = population_summary(uparams_mean, uparams_sd, bounds, idx_re)
+    else:
+        result.x_re_pop_mean_sd = None
+    if verbose:
+        print(f'{TAB}.. finished ({result.execution_time:.1f} secs).')
+
+    return result
+
+
+def objective_empirical_bayes(uparams, sub_ind, fun, bounds, idx_re, uparams_re_mean, uparams_re_sd, idx_fe, uparams_fe):
+    params = transform_to_constrained_space(uparams, bounds)
+    if len(idx_fe) > 0:
+        params_fe = transform_to_constrained_space(uparams_fe[idx_fe], bounds[idx_fe])
+        params[idx_fe] = params_fe
+    val = fun(params, sub_ind)
+    # Gaussian prior penalty on random-effects
+    if len(idx_re) > 0:
+        val += 0.5 * np.sum((uparams[idx_re] - uparams_re_mean[idx_re])**2 / uparams_re_sd[idx_re]**2)
+    return val
+
+def objective_group_fe(uparams_fe, fun, uparams, bounds, idx_fe):
+    # (uparams_tmp, fun, uparams_re_init, bounds, idx_fe)
+    negll = 0.0
+    params_fe = transform_to_constrained_space(uparams_fe, bounds)  # (K,)
+    for s in range(uparams.shape[0]):
+        params = transform_to_constrained_space(uparams[s], bounds)
+        params[idx_fe] = params_fe[idx_fe]
+        negll += fun(params, s)
+    return negll
+
+
+def population_summary(uparams_re_mean, uparams_re_sd, bounds, idx_re, n_draws=200000, seed=0):
+
+
+    # params_re_popmean, params_re_popsd = population_summary(uparams_re_mean, uparams_re_sd, bounds, idx_re)
+
+    """
+    Compute group-level summaries in params-space using Monte Carlo sampling based on:
+        z_j ~ Normal(mu_j, sigma_j)  (for j in re_idx)
+        params = transform_constrained(uparams, bounds)
+
+    Returns summaries only for re_idx parameters.
+    """
+    rng = np.random.default_rng(seed)
+
+    # Draw uparams for RE dims only: (n_draws, |re_idx|)
+    uparams_re = rng.normal(loc=uparams_re_mean[idx_re], scale=uparams_re_sd[idx_re], size=(n_draws, idx_re.size))
+
+    # Put into full K-dim uparams with fixed values for non-RE dims (mu is a reasonable plug-in)
+    uparams = np.tile(uparams_re_mean, (n_draws, 1))
+    uparams[:, idx_re] = uparams_re
+
+    # Transform to params-space
+    params = transform_to_constrained_space(uparams, bounds)  # expects (n_draws, K) support
+
+    # Summarize only RE dims
+    params_re = params[:, idx_re]
+
+    theta_mean, theta_sd = params_re.mean(axis=0), params_re.std(axis=0, ddof=0)
+
+    return theta_mean, theta_sd
+
+
+def transform_to_constrained_space(uparams, bounds):
+    lower, upper = bounds.T
+    uparams = np.asarray(uparams, dtype=float)
+
+    params = np.empty_like(uparams, dtype=float)
+
+    m_unbounded  = np.isinf(lower) & np.isinf(upper)
+    m_lower_only = np.isfinite(lower) & np.isinf(upper)
+    m_upper_only = np.isinf(lower) & np.isfinite(upper)
+    m_bounded    = np.isfinite(lower) & np.isfinite(upper)
+
+    # Use ... to apply along last axis
+    params[..., m_unbounded]  = uparams[..., m_unbounded]
+    params[..., m_lower_only] = lower[m_lower_only] + np.exp(uparams[..., m_lower_only])
+    params[..., m_upper_only] = upper[m_upper_only] - np.exp(uparams[..., m_upper_only])
+
+    params[..., m_bounded] = lower[m_bounded] + (upper[m_bounded] - lower[m_bounded]) / (1 + np.exp(-uparams[..., m_bounded]))
+    return params
+
+
+def transform_to_unconstrained_space(params, bounds, eps=1e-12):
+    lower, upper = bounds.T
+    params = np.asarray(params, dtype=float)
+
+    uparams = np.empty_like(params, dtype=float)
+
+    m_unbounded  = np.isinf(lower) & np.isinf(upper)
+    m_lower_only = np.isfinite(lower) & np.isinf(upper)
+    m_upper_only = np.isinf(lower) & np.isfinite(upper)
+    m_bounded    = np.isfinite(lower) & np.isfinite(upper)
+
+    uparams[..., m_unbounded] = params[..., m_unbounded]
+
+    # Guard against exact-bound values
+    uparams[..., m_lower_only] = np.log(np.maximum(params[..., m_lower_only] - lower[m_lower_only], eps))
+    uparams[..., m_upper_only] = np.log(np.maximum(upper[m_upper_only] - params[..., m_upper_only], eps))
+
+    x = (params[..., m_bounded] - lower[m_bounded]) / (upper[m_bounded] - lower[m_bounded])
+    x = np.clip(x, eps, 1 - eps)
+    uparams[..., m_bounded] = np.log(x) - np.log1p(-x)
+
+    return uparams
 
 
 class RandomDisplacementBoundsConstraints(object):

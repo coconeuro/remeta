@@ -51,31 +51,41 @@ Output (for load_dataset):
 Output (for fit):
 ```
 +++ Type 1 level +++
-Initial guess (neg. LL: 692.75)
-    [guess] type1_noise: 0.5
-    [guess] type1_bias: 0
-Performing local optimization
-    [final] type1_noise: 0.503
-    [final] type1_bias: -0.0821
-Final neg. LL: 683.64
-Total fitting time: 0.1 secs
+  Subject-level estimation (MLE)
+    .. finished (0.3 secs).
+  Final report
+    Parameters estimates (subject-level fit)
+        [subject] type1_noise: 0.503
+        [subject] type1_bias: -0.0821
+    [subject] Neg. LL: 683.64
+    [subject] Fitting time: 0.25 secs
+Type 1 level finished
+
 +++ Type 2 level +++
-Initial guess (neg. LL: 3840.25)
-    [guess] type2_noise: 0.1
-    [guess] type2_criteria_0: 0.2
-    [guess] type2_criteria_1: 0.2 = gap | criterion = 0.4
-    [guess] type2_criteria_2: 0.2 = gap | criterion = 0.6
-    [guess] type2_criteria_3: 0.2 = gap | criterion = 0.8
-Performing local optimization
-    [final] type2_noise: 0.288
-    [final] type2_criteria_0: 0.189
-    [final] type2_criteria_1: 0.21 = gap | criterion = 0.399
-    [final] type2_criteria_2: 0.206 = gap | criterion = 0.605
-    [final] type2_criteria_3: 0.194 = gap | criterion = 0.798
-    [extra] type2_criteria_absolute: [0.189, 0.399, 0.605, 0.798]
-    [extra] type2_criteria_bias: -0.00211
-Final neg. LL: 3605.21
-Total fitting time: 30 secs
+  Subject-level estimation (MLE)
+        Grid search activated (grid size = 2048)
+        Grid iteration 1000 / 2048
+        Grid iteration 2000 / 2048
+            [grid] type2_noise: 0.2641
+            [grid] type2_criteria_0: 0.1667
+            [grid] type2_criteria_1: 0.2 = gap | criterion = 0.4
+            [grid] type2_criteria_2: 0.2 = gap | criterion = 0.6
+            [grid] type2_criteria_3: 0.2 = gap | criterion = 0.8
+        Grid neg. LL: 3636.9
+        Grid runtime: 150.86 secs
+    .. finished (199.1 secs).
+  Final report
+    Parameters estimates (subject-level fit)
+        [subject] type2_noise: 0.288
+        [subject] type2_criteria_0: 0.189
+        [subject] type2_criteria_1: 0.21 = gap | criterion = 0.399
+        [subject] type2_criteria_2: 0.206 = gap | criterion = 0.605
+        [subject] type2_criteria_3: 0.194 = gap | criterion = 0.798
+            [extra] type2_criteria_absolute: [0.189, 0.399, 0.605, 0.798]
+            [extra] type2_criteria_bias: -0.00211
+    [subject] Neg. LL: 3605.21
+    [subject] Fitting time: 198.89 secs
+Type 2 level finished
 ```
 
 Since the dataset is based on simulation, we know the true parameters of the underlying generative model (see first output), which are quite close to the fitted parameters.

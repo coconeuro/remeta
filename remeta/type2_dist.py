@@ -1,8 +1,9 @@
 import warnings
 
 import numpy as np
-from scipy.stats import lognorm, beta, betaprime, gamma, truncnorm
+from scipy.stats import lognorm, beta, betaprime, gamma
 
+from .fast_truncnorm import truncnorm
 from ._distributions import (TruncatedGumbelMode, TruncatedGumbelModeSD, TruncatedLognormal, TruncatedLognormalMode,
                              TruncatedLognormalMean, TruncatedLognormalModeSD, _params_lognorm_mode_std,
                              _params_truncnorm_mode_std)

@@ -1,7 +1,6 @@
 import pickle
 import numpy as np
 import remeta
-from remeta.gendata import simu_data  # noqa
 import os
 import pathlib
 import gzip
@@ -97,8 +96,8 @@ elif mode == 'noisy_temperature':
 
 
 np.random.seed(seed)
-data = simu_data(nsubjects=1, nsamples=nsamples, params=params, cfg=cfg, x_stim_external=None, verbose=True,
-                 x_stim_stepsize=x_stim_stepsize, squeeze=True, skip_type2=skip_type2, compute_stats=True)
+data = remeta.simu_data(nsubjects=1, nsamples=nsamples, params=params, cfg=cfg, x_stim_external=None, verbose=True,
+                        x_stim_stepsize=x_stim_stepsize, squeeze=True, compute_stats=True)
 
 path = os.path.join(pathlib.Path(__file__).parent.resolve(), '..', 'remeta/demo_data', f'example_data_{mode}.pkl.gz')
 # save = (data.x_stim, data.d_dec, data.c_conf, params, data.cfg, data.y_decval_mode, stats)

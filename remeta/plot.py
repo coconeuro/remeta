@@ -91,7 +91,7 @@ def plot_type2_condensed(ax, s, m, m2=None, nsamples_gen=1000):
         c_conf = m.c_conf
 
     simu = simu_data({**type1_params, **type2_params}, nsamples=len(stimuli_norm), nsubjects=nsamples_gen,
-                     cfg=cfg, x_stim_external=stimuli_norm, verbose=False)
+                     cfg=cfg, stimuli_external=stimuli_norm, verbose=False)
 
     if 'type1_thresh' not in type1_params:
         type1_params['type1_thresh'] = 0
@@ -113,7 +113,7 @@ def plot_type2_condensed(ax, s, m, m2=None, nsamples_gen=1000):
             type1_params2 = m2.params_type1
             type2_params2 = m2.params_type2
         simu2 = simu_data({**type1_params2, **type2_params2}, nsamples=len(stimuli_norm), nsubjects=nsamples_gen,
-                          cfg=cfg2, x_stim_external=stimuli_norm, verbose=False)
+                          cfg=cfg2, stimuli_external=stimuli_norm, verbose=False)
 
         if 'type1_thresh' not in type1_params2:
             type1_params2['type1_thresh'] = 0
@@ -183,10 +183,10 @@ def plot_type2_condensed(ax, s, m, m2=None, nsamples_gen=1000):
 
 
 def plot_psychometric_sim(data, figure_paper=False):
-    plot_psychometric(data.d_dec, data.x_stim, data.params_type1, cfg=data.cfg, figure_paper=figure_paper)
+    plot_psychometric(data.choices, data.stimuli, data.params_type1, cfg=data.cfg, figure_paper=figure_paper)
 
 
-def plot_psychometric(choices, stimuli, params, cfg=None, figure_paper=False,
+def plot_psychometric(stimuli, choices, params, cfg=None, figure_paper=False,
                       fit_only=False, highlight_fit=False):
 
     params_type1 = {k: v for k, v in params.items() if k.startswith('type1')}
@@ -256,15 +256,15 @@ def plot_psychometric(choices, stimuli, params, cfg=None, figure_paper=False,
     set_fontsize(label=13, tick=11)
 
 
-def plot_confidence(stimuli_or_data_object, c_conf=None):
-    if c_conf is None:
-        stimuli, c_conf = stimuli_or_data_object.x_stim, stimuli_or_data_object.c_conf
+def plot_confidence(stimuli_or_data_object, confidence=None):
+    if confidence is None:
+        stimuli, confidence = stimuli_or_data_object.stimuli, stimuli_or_data_object.confidence
     else:
         stimuli = stimuli_or_data_object
     ax = plt.gca()
 
     for v in sorted(np.unique(stimuli)):
-        plt.errorbar(v, np.mean(c_conf[stimuli == v]), yerr=sem(c_conf[stimuli == v]), marker='o', markersize=5,
+        plt.errorbar(v, np.mean(confidence[stimuli == v]), yerr=sem(confidence[stimuli == v]), marker='o', markersize=5,
                      mew=1, mec='k', color='None', ecolor='k', mfc=color_data, clip_on=False, elinewidth=1.5,
                      capsize=5)
     plt.plot([0, 0], [0, 1], 'k-', lw=0.5)
@@ -274,7 +274,7 @@ def plot_confidence(stimuli_or_data_object, c_conf=None):
     set_fontsize(label=13, tick=11)
 
 
-def plot_evidence_versus_confidence(x_stim, c_conf, y_decval, params, cfg=None,
+def plot_evidence_versus_confidence(stimuli, confidence, y_decval, params, cfg=None,
                                     type2_noise_type=None, type2_noise_dist=None,
                                     type1_noise_signal_dependency='none',
                                     plot_data=True, plot_generative_data=True, plot_likelihood=False,
@@ -299,7 +299,7 @@ def plot_evidence_versus_confidence(x_stim, c_conf, y_decval, params, cfg=None,
                 setattr(cfg, k, 0)
 
 
-    generative = simu_data(params, nsamples=len(x_stim), nsubjects=nsamples_gen, cfg=cfg, x_stim_external=x_stim,
+    generative = simu_data(params, nsamples=len(stimuli), nsubjects=nsamples_gen, cfg=cfg, stimuli_external=stimuli,
                            verbose=False, squeeze=True)
 
     ax = plt.gca()
@@ -310,18 +310,18 @@ def plot_evidence_versus_confidence(x_stim, c_conf, y_decval, params, cfg=None,
         vals_dv_ = vals_decval[vals_decval < 0] if k == 0 else vals_decval[vals_decval > 0]
         vals_dv_gen_ = vals_dv_gen[vals_dv_gen < 0] if k == 0 else vals_dv_gen[vals_dv_gen > 0]
 
-        conf_data_means = [np.mean(c_conf[y_decval == v]) for v in vals_dv_]
-        conf_data_std_neg = [np.std(c_conf[(y_decval == v) & (c_conf < conf_data_means[i])])
+        conf_data_means = [np.mean(confidence[y_decval == v]) for v in vals_dv_]
+        conf_data_std_neg = [np.std(confidence[(y_decval == v) & (confidence < conf_data_means[i])])
                              for i, v in enumerate(vals_dv_)]
-        conf_data_std_pos = [np.std(c_conf[(y_decval == v) & (c_conf >= conf_data_means[i])])
+        conf_data_std_pos = [np.std(confidence[(y_decval == v) & (confidence >= conf_data_means[i])])
                              for i, v in enumerate(vals_dv_)]
 
-        conf_gen_means = [np.mean(generative.c_conf[generative.y_decval_latent == v]) for v in vals_dv_gen_]
+        conf_gen_means = [np.mean(generative.confidence[generative.y_decval_latent == v]) for v in vals_dv_gen_]
         conf_gen_std_neg = [np.std(
-            generative.c_conf[(generative.y_decval_latent == v) & (generative.c_conf < conf_gen_means[i])])
+            generative.confidence[(generative.y_decval_latent == v) & (generative.confidence < conf_gen_means[i])])
             for i, v in enumerate(vals_dv_gen_)]
         conf_gen_std_pos = [np.std(
-            generative.c_conf[(generative.y_decval_latent == v) & (generative.c_conf > conf_gen_means[i])])
+            generative.confidence[(generative.y_decval_latent == v) & (generative.confidence > conf_gen_means[i])])
             for i, v in enumerate(vals_dv_gen_)]
 
         if plot_data:
@@ -360,7 +360,7 @@ def plot_evidence_versus_confidence(x_stim, c_conf, y_decval, params, cfg=None,
                     dist = get_type2_dist(type2_noise_dist, np.maximum(1e-3, var_likelihood_means[i]), params['type2_noise'])
                     z1_type1_evidence_generative = dist.rvs(nsamples_dist)
                     c_conf_generative = type1_evidence_to_confidence(
-                        z1_type1_evidence_generative, x_stim=x_stim, y_decval=z1_type1_evidence_generative,
+                        z1_type1_evidence_generative, x_stim=stimuli, y_decval=z1_type1_evidence_generative,
                         type1_noise_signal_dependency=type1_noise_signal_dependency, **params
                     )
                     likelihood = gaussian_kde(c_conf_generative, bw_method=bw).evaluate(x)
@@ -433,23 +433,23 @@ def plot_evidence_versus_confidence(x_stim, c_conf, y_decval, params, cfg=None,
     set_fontsize(label=13, tick=11)
 
 
-def plot_confidence_dist(cfg, x_stim, data_c_conf, params, nsamples_gen=1000,
+def plot_confidence_dist(cfg, stimuli, confidence, params, nsamples_gen=1000,
                          plot_likelihood=True, var_likelihood_grid=None, y_decval_grid=None,
                          likelihood_weighting=None, dv_range=(45, 50, 55), nsamples_dist=10000, bw=0.03,
                          figure_paper=False):
-    generative = simu_data(params, nsamples=len(x_stim), nsubjects=nsamples_gen, cfg=cfg, x_stim_external=x_stim,
+    generative = simu_data(params, nsamples=len(stimuli), nsubjects=nsamples_gen, cfg=cfg, stimuli_external=stimuli,
                            verbose=False)
 
     nbins = 20
-    levels = np.unique(x_stim)
+    levels = np.unique(stimuli)
     counts, counts_gen, bins = [[] for _ in range(2)], [[] for _ in range(2)], [[] for _ in range(2)]
     for k in range(2):
         levels_ = (levels[levels < 0], levels[levels > 0])[k]
         for i, v in enumerate(levels_):
-            hist = np.histogram(data_c_conf[x_stim == v], density=True, bins=nbins)
+            hist = np.histogram(confidence[stimuli == v], density=True, bins=nbins)
             counts[k] += [hist[0]]
             bins[k] += [hist[1]]
-            counts_gen[k] += [np.histogram(generative.c_conf[np.tile(x_stim, (nsamples_gen, 1)) == v],
+            counts_gen[k] += [np.histogram(generative.c_conf[np.tile(stimuli, (nsamples_gen, 1)) == v],
                                            density=True, bins=bins[k][i])[0] / (len(bins[k][i]) - 1)]
     counts = [np.array(count) / np.max([np.max(c) for c in counts]) for count in counts]
     counts_gen = [np.array(count) / np.max([np.max(c) for c in counts_gen]) for count in counts_gen]
@@ -462,8 +462,8 @@ def plot_confidence_dist(cfg, x_stim, data_c_conf, params, nsamples_gen=1000,
         levels_ = (levels[levels < 0], levels[levels > 0])[k]
 
         if plot_likelihood:
-            confp_means = [[np.nanmean(var_likelihood_grid[x_stim == v, z]) for z in dv_range] for v in levels_]
-            weighting_p = np.array([[np.nanmean(likelihood_weighting[x_stim == v, z]) for z in dv_range] for v in
+            confp_means = [[np.nanmean(var_likelihood_grid[stimuli == v, z]) for z in dv_range] for v in levels_]
+            weighting_p = np.array([[np.nanmean(likelihood_weighting[stimuli == v, z]) for z in dv_range] for v in
                                     levels_])
             weighting_p /= np.max(weighting_p)
 
@@ -499,7 +499,7 @@ def plot_confidence_dist(cfg, x_stim, data_c_conf, params, nsamples_gen=1000,
                     likelihood_max = likelihood.max()
                     likelihood_norm = likelihood / likelihood_max if likelihood_max > 0 else np.zeros(likelihood.shape)
                     likelihood_norm[likelihood_norm < 0.05] = np.nan
-                    correct = np.sign(y_decval_grid[x_stim == v, dv][0]) == (-1, 1)[k]
+                    correct = np.sign(y_decval_grid[stimuli == v, dv][0]) == (-1, 1)[k]
                     color_shade = [[0.175], [0], [0.175]][j]
                     plt.plot(v + (weighting_p[i][j] * 0.26 * likelihood_norm + 0.005) * ((1, -1)[k]),  # noqa
                              x, color=(color_model_wrong, color_model)[int(correct)] + color_shade,
