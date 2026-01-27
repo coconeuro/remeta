@@ -3,7 +3,7 @@ import warnings
 import numpy as np
 from scipy.optimize import OptimizeResult
 
-from .util import TAB, SP2, Struct, ReprMixin, spearman2d, pearson2d, listlike, empty_list
+from .util import TAB, SP2, Struct, ReprMixin, spearman2d, pearson2d, listlike, empty_list, print_class_instance
 
 
 class Parameter(ReprMixin):
@@ -232,7 +232,7 @@ class Data(ReprMixin):
 
 
 
-class ModelResult(ReprMixin):
+class ModelResult():
 
     def __init__(self, level):
         self.level = level
@@ -286,7 +286,15 @@ class ModelResult(ReprMixin):
         return params_extra
 
 
-class ModelResultContainer(ReprMixin):
+    def __str__(self):
+        txt = print_class_instance(self, attr_replace_string=dict(fit='Result(s) from scipy.minimize'))
+        return txt
+
+    def __repr__(self):
+        return self.__str__()
+
+
+class ModelResultContainer():
     def __init__(self, stage):
         self.stage = stage
         self.subject = ModelResult(level='subject')
@@ -398,6 +406,14 @@ class ModelResultContainer(ReprMixin):
             if cfg.true_params is not None and hasattr(self, 'negll_true'):
                 print(f'{indent}Neg. LL using true params: {self.negll_true[s]:.2f}')
 
+    def __str__(self):
+        txt = print_class_instance(self, attr_class_only=('subject', 'group'))
+        return txt
+
+    def __repr__(self):
+        return self.__str__()
+
+
 
 class Summary(ReprMixin):
 
@@ -465,29 +481,30 @@ class Summary(ReprMixin):
 
 
     def __str__(self):
-        txt = f'{self.__class__.__name__}'
-        for k, v in self.__dict__.items():
-            if k in ('type1', 'type2'):
-                txt += f"\n\t{k}: {v.__class__.__name__}"
-            elif isinstance(v, dict):
-                txt += f"\n\t{k}: { {k_: np.array2string(np.array(v_), precision=4, threshold=20, separator=', ') for k_, v_ in v.items()} }"
-            elif isinstance(v, list):
-                if isinstance(v[0], dict):
-                    txt += f'\n\t{k}:[\n'
-                    for i in range(min(5, len(v))):
-                        txt += '\t\t{' + ', '.join([f"'{k_}': {np.array2string(np.array(v_), precision=4, separator=', ')}" for k_, v_ in v[i].items()]) + '}\n'
-                    if len(v) > 10:
-                        txt += '\t\t[...]\n'
-                    if len(v) > 5:
-                        for i in range(max(-5, -len(v)), 0):
-                            txt += '\t\t{' + ', '.join([f"'{k_}': {np.array2string(np.array(v_), precision=4, separator=', ')}" for k_, v_ in v[i].items()]) + '}\n'
-                    txt += '\t]'
-                elif isinstance(v[0], float):
-                    txt += f"\n\t{k}: {np.array2string(np.array(v), precision=4, threshold=50, separator=', ')}"
-            elif isinstance(v, np.ndarray):
-                txt += f"\n\t{k}: {np.array2string(np.array(v), precision=4, threshold=50, separator=', ')}"
-            else:
-                txt += f"\n\t{k}: {v}"
+        txt = print_class_instance(self, attr_class_only=('type1', 'type2'))
+        # txt = f'{self.__class__.__name__}'
+        # for k, v in self.__dict__.items():
+        #     if k in ('type1', 'type2'):
+        #         txt += f"\n\t{k}: {v.__class__.__name__}"
+        #     elif isinstance(v, dict):
+        #         txt += f"\n\t{k}: { {k_: np.array2string(np.array(v_), precision=4, threshold=20, separator=', ') for k_, v_ in v.items()} }"
+        #     elif isinstance(v, list):
+        #         if isinstance(v[0], dict):
+        #             txt += f'\n\t{k}:[\n'
+        #             for i in range(min(5, len(v))):
+        #                 txt += '\t\t{' + ', '.join([f"'{k_}': {np.array2string(np.array(v_), precision=4, separator=', ')}" for k_, v_ in v[i].items()]) + '}\n'
+        #             if len(v) > 10:
+        #                 txt += '\t\t[...]\n'
+        #             if len(v) > 5:
+        #                 for i in range(max(-5, -len(v)), 0):
+        #                     txt += '\t\t{' + ', '.join([f"'{k_}': {np.array2string(np.array(v_), precision=4, separator=', ')}" for k_, v_ in v[i].items()]) + '}\n'
+        #             txt += '\t]'
+        #         elif isinstance(v[0], float):
+        #             txt += f"\n\t{k}: {np.array2string(np.array(v), precision=4, threshold=50, separator=', ')}"
+        #     elif isinstance(v, np.ndarray):
+        #         txt += f"\n\t{k}: {np.array2string(np.array(v), precision=4, threshold=50, separator=', ')}"
+        #     else:
+        #         txt += f"\n\t{k}: {v}"
         # print(txt)
         return txt
 

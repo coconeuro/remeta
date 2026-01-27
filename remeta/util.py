@@ -14,13 +14,50 @@ _slsqp_epsilon = np.sqrt(np.finfo(float).eps)  # scipy's default value for the S
 
 
 class Struct:
-    pass
+
+    def __str__(self):
+        return self.__repr__()
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}[attributes: ' + ', '.join([k for k in self.__dict__.keys()]) + ']'
 
 
 class ReprMixin:
+    def __str__(self):
+        return self.__repr__()
+
     def __repr__(self):
         return f'{self.__class__.__name__}\n' + '\n'.join([f'\t{k}: {v}' for k, v in self.__dict__.items()])
 
+
+def print_class_instance(instance, attr_class_only=(), attr_replace_string=None):
+    txt = f'{instance.__class__.__name__}'
+    for k, v in instance.__dict__.items():
+        if k in attr_class_only:
+            txt += f"\n\t{k}: {v.__class__.__name__}"
+        elif attr_replace_string is not None and k in attr_replace_string:
+            txt += f"\n\t{k}: {attr_replace_string[k]}"
+        elif isinstance(v, dict):
+            txt += f"\n\t{k}: { {k_: np.array2string(np.array(v_), precision=4, threshold=20, separator=', ') for k_, v_ in v.items()} }"
+        elif isinstance(v, list):
+            if isinstance(v[0], dict):
+                txt += f'\n\t{k}:[\n'
+                for i in range(min(5, len(v))):
+                    txt += '\t\t{' + ', '.join([f"'{k_}': {np.array2string(np.array(v_), precision=4, separator=', ')}" for k_, v_ in v[i].items()]) + '}\n'
+                if len(v) > 10:
+                    txt += '\t\t[...]\n'
+                if len(v) > 5:
+                    for i in range(max(-5, -len(v)), 0):
+                        txt += '\t\t{' + ', '.join([f"'{k_}': {np.array2string(np.array(v_), precision=4, separator=', ')}" for k_, v_ in v[i].items()]) + '}\n'
+                txt += '\t]'
+            elif isinstance(v[0], float):
+                txt += f"\n\t{k}: {np.array2string(np.array(v), precision=4, threshold=50, separator=', ')}"
+        elif isinstance(v, np.ndarray):
+            txt += f"\n\t{k}: {np.array2string(np.array(v), precision=4, threshold=50, separator=', ')}"
+        else:
+            txt += f"\n\t{k}: {v}"
+    # print(txt)
+    return txt
 
 def reset_dataclass_on_init(cls):
     """
