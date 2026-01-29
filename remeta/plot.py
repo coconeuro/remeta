@@ -91,7 +91,7 @@ def plot_type2_condensed(ax, s, m, m2=None, nsamples_gen=1000):
         c_conf = m.c_conf
 
     simu = simu_data({**type1_params, **type2_params}, nsamples=len(stimuli_norm), nsubjects=nsamples_gen,
-                     cfg=cfg, stimuli_external=stimuli_norm, verbose=False)
+                     cfg=cfg, stimuli_external=stimuli_norm, verbosity=False)
 
     if 'type1_thresh' not in type1_params:
         type1_params['type1_thresh'] = 0
@@ -113,7 +113,7 @@ def plot_type2_condensed(ax, s, m, m2=None, nsamples_gen=1000):
             type1_params2 = m2.params_type1
             type2_params2 = m2.params_type2
         simu2 = simu_data({**type1_params2, **type2_params2}, nsamples=len(stimuli_norm), nsubjects=nsamples_gen,
-                          cfg=cfg2, stimuli_external=stimuli_norm, verbose=False)
+                          cfg=cfg2, stimuli_external=stimuli_norm, verbosity=False)
 
         if 'type1_thresh' not in type1_params2:
             type1_params2['type1_thresh'] = 0
@@ -300,7 +300,7 @@ def plot_evidence_versus_confidence(stimuli, confidence, y_decval, params, cfg=N
 
 
     generative = simu_data(params, nsamples=len(stimuli), nsubjects=nsamples_gen, cfg=cfg, stimuli_external=stimuli,
-                           verbose=False, squeeze=True)
+                           verbosity=False, squeeze=True)
 
     ax = plt.gca()
     vals_decval = np.unique(y_decval)
@@ -438,7 +438,7 @@ def plot_confidence_dist(cfg, stimuli, confidence, params, nsamples_gen=1000,
                          likelihood_weighting=None, dv_range=(45, 50, 55), nsamples_dist=10000, bw=0.03,
                          figure_paper=False):
     generative = simu_data(params, nsamples=len(stimuli), nsubjects=nsamples_gen, cfg=cfg, stimuli_external=stimuli,
-                           verbose=False)
+                           verbosity=False)
 
     nbins = 20
     levels = np.unique(stimuli)
