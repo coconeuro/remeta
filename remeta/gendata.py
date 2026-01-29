@@ -87,7 +87,7 @@ def simu_type1_responses(x_stim, params, cfg):
     return y_decval_latent, y_decval, d_dec
 
 
-def simu_data(params, nsubjects=1, nsamples=1000, cfg=None, stimuli_external=None, verbose=True, stimuli_stepsize=0.02,
+def simu_data(params, nsubjects=1, nsamples=1000, cfg=None, stimuli_external=None, verbosity=True, stimuli_stepsize=0.02,
               squeeze=False, warn_in_case_of_nondivisible_stepsize=False,
               compute_stats=True, **kwargs):
     params = params.copy()  # this variable can be modifed, thus better to make a copy
@@ -238,7 +238,7 @@ def simu_data(params, nsubjects=1, nsamples=1000, cfg=None, stimuli_external=Non
 
 
     simulation = Simulation(**simargs)
-    if verbose:
+    if verbosity:
         print_dataset_characteristics(simulation)
 
     return simulation
