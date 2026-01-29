@@ -3,10 +3,14 @@ import pathlib
 import pickle
 import timeit
 import warnings
-from dataclasses import make_dataclass
+
+try:  # only necessary if multiple cores should be used
+    from multiprocessing_on_dill.pool import Pool as DillPool
+except ModuleNotFoundError:
+    pass
 
 import numpy as np
-from scipy.optimize import minimize, OptimizeResult
+from scipy.optimize import OptimizeResult
 from scipy.stats import logistic as logistic_dist
 from scipy.special import expit
 
@@ -19,7 +23,7 @@ from .plot import plot_evidence_versus_confidence, plot_confidence_dist
 from .transform import (compute_signal_dependent_type1_noise, logistic, type1_evidence_to_confidence,
                         confidence_to_type1_evidence, confidence_to_type1_noise, type1_noise_to_confidence,
                         check_criteria_sum, compute_nonlinear_encoding)
-from .util import _check_param, TAB, SP2, maxfloat, print_dataset_characteristics, print_warnings, empty_list
+from .util import _check_param, TAB, SP2, print_dataset_characteristics, print_warnings, empty_list
 
 class ReMeta:
 
@@ -52,7 +56,7 @@ class ReMeta:
         self.type2_is_fitted = False
 
 
-    def fit(self, stimuli, choices, confidence, precomputed_parameters=None, initial_guess=None, verbose=True,
+    def fit(self, stimuli, choices, confidence, precomputed_parameters=None, initial_guess=None, verbosity=1,
             ignore_warnings=False):
         """
         Fit type 1 and type 2 parameters
@@ -77,8 +81,8 @@ class ReMeta:
             [ToDO: which information?]
         initial_guess : array-like of length n_params
             For testing: provide an initial guess for parameters
-        verbose : bool
-            If True, information of the model fitting procedure is printed.
+        verbosity : int
+            If 1, information of the model fitting procedure is printed. If 2, more information is printed.
         ignore_warnings : bool
             If True, warnings during model fitting are supressed.
         """
@@ -88,16 +92,16 @@ class ReMeta:
 
         self.result = Summary(self.data, self.cfg)
 
-        self.fit_type1(precomputed_parameters=precomputed_parameters, initial_guess=initial_guess, verbose=verbose,
+        self.fit_type1(precomputed_parameters=precomputed_parameters, initial_guess=initial_guess, verbosity=verbosity,
                        ignore_warnings=ignore_warnings)
 
         if not self.cfg.skip_type2:
-            self.fit_type2(precomputed_parameters=precomputed_parameters, initial_guess=initial_guess, verbose=verbose,
+            self.fit_type2(precomputed_parameters=precomputed_parameters, initial_guess=initial_guess, verbosity=verbosity,
                            ignore_warnings=ignore_warnings)
 
 
     def fit_type1(self, stimuli=None, choices=None, confidence=None, precomputed_parameters=None, initial_guess=None,
-                  verbose=True, ignore_warnings=False):
+                  verbosity=1, ignore_warnings=False):
 
         if self.data is None:
             if stimuli is None or choices is None:
@@ -108,7 +112,7 @@ class ReMeta:
 
         self.result = Summary(self.data, self.cfg)
 
-        if verbose:
+        if verbosity:
             print('\n+++ Type 1 level +++')
         with warnings.catch_warnings(record=True) as w:
         # with (warnings.catch_warnings()):
@@ -129,24 +133,34 @@ class ReMeta:
                 fits_type1_subject, fit_type1_group = None, None
                 if self.cfg.paramset_type1.nparams > 0:
 
-                    if verbose:
+                    if verbosity:
                         print(f'{SP2}Subject-level estimation (MLE)')
                         tind = timeit.default_timer()
 
                     # Single-subject fits via MLE
-                    fits_type1_subject = [None for _ in range(self.data.nsubjects)]
-                    for s in range(self.data.nsubjects):
-                        fits_type1_subject[s] = subject_estimation(
+                    use_multiproc_for_subject_loop = self.cfg.optim_multiproc and (self.data.nsubjects >= 8) and (self.cfg._optim_multiproc_cores_effective >= 8)
+                    def subject_loop(s):
+                        return subject_estimation(
                             self.compute_type1_negll, self.cfg.paramset_type1, args=[s],
                             gridsearch=self.cfg.optim_type1_gridsearch,
                             scipy_solvers=self.cfg.optim_type1_scipy_solvers,
-                            grid_multiproc=self.cfg.optim_grid_multiproc,
+                            multiproc=self.cfg.optim_multiproc and not use_multiproc_for_subject_loop,
+                            multiproc_cores=self.cfg._optim_multiproc_cores_effective,
                             minimize_along_grid=self.cfg.optim_type1_minimize_along_grid,
                             global_minimization=self.cfg.optim_type1_global_minimization,
                             fine_gridsearch=self.cfg.optim_type1_fine_gridsearch,
                             guess=initial_guess,
-                            verbose=verbose
+                            verbosity=verbosity
                         )
+                    if self.cfg.optim_multiproc and use_multiproc_for_subject_loop:
+                        with DillPool(self.cfg._optim_multiproc_cores_effective) as pool:
+                            fits_type1_subject = pool.map(subject_loop, range(self.data.nsubjects))
+                    else:
+                        fits_type1_subject = [None for _ in range(self.data.nsubjects)]
+                        for s in range(self.data.nsubjects):
+                            if (verbosity > 0) and (self.data.nsubjects > 1):
+                                print(f'{TAB} Subject {s + 1} / {self.data.nsubjects}')
+                            fits_type1_subject[s] = subject_loop(s)
                     # Store single-subject results
                     params_subject = [fits_type1_subject[s].x for s in range(self.data.nsubjects)]
                     self.result.type1.subject.store(
@@ -154,7 +168,7 @@ class ReMeta:
                         params=params_subject, fun=self.compute_type1_negll, args=[],
                         stage='type1', fit=fits_type1_subject
                     )
-                    if verbose:
+                    if verbosity:
                         print(f'{TAB}.. finished ({timeit.default_timer() - tind:.1f} secs).')
 
                     if self.data.nsubjects > 1:
@@ -168,8 +182,10 @@ class ReMeta:
                                 bounds=self.cfg.paramset_type1.bounds,
                                 idx_fe=idx_fe,
                                 idx_re=idx_re,
+                                multiproc=self.cfg.optim_multiproc,
+                                multiproc_cores=self.cfg._optim_multiproc_cores_effective,
                                 max_iter=30, sigma_floor=1e-3, damping=0.5,
-                                verbose=verbose
+                                verbosity=verbosity
                             )
                             self.result.type1.init_group()
                             self.result.type1.group.store(
@@ -180,21 +196,21 @@ class ReMeta:
                                 pop_mean_sd=fit_type1_group.x_re_pop_mean_sd
                             )
             self.result.type1.store(cfg=self.cfg, data=self.data, fun=self.compute_type1_negll, args=[])
-            if verbose:
+            if verbosity:
                 self.result.type1.report_fit(self.cfg)
             self.type1_is_fitted = True
 
-        if not ignore_warnings and verbose:
+        if not ignore_warnings and verbosity:
             print_warnings(w)
 
         if self.cfg.skip_type2:
             self.result.store(self.cfg)
 
-        if verbose:
+        if verbosity:
             print('Type 1 level finished')
 
 
-    def fit_type2(self, precomputed_parameters=None, initial_guess=None, verbose=True, ignore_warnings=False):
+    def fit_type2(self, precomputed_parameters=None, initial_guess=None, verbosity=1, ignore_warnings=False):
 
         # compute decision values
         self._compute_decision_values()
@@ -205,7 +221,7 @@ class ReMeta:
                 [((2 * np.sqrt(3)) / np.pi) / (1 - np.minimum(1-1e-8, self.data.c_conf[s])**2) for s in range(self.data.nsubjects)]
             self.modeldata.precomputed.quintiles_noisy_temperature = np.arange(self.cfg.resolution_noisy_temperature, 1, self.cfg.resolution_noisy_temperature)
 
-        if verbose:
+        if verbosity:
             print('\n+++ Type 2 level +++')
 
         args_type2 = [self.cfg.type2_noise_type]
@@ -231,25 +247,35 @@ class ReMeta:
                 warnings.filterwarnings('ignore', module='scipy.optimize')
                 if self.cfg.paramset_type2.nparams > 0:
 
-                    if verbose:
+                    if verbosity:
                         print(f'{SP2}Subject-level estimation (MLE)')
                         tind = timeit.default_timer()
                         # print(f'{SP2}Scipy solvers: {self.cfg.optim_type1_scipy_solvers}')
 
-                    fits_type2_subject = [None for _ in range(self.data.nsubjects)]
-                    for s in range(self.data.nsubjects):
-                        # if verbose and (self.data.nsubjects > 1):
-                        #     print(f'{TAB}Subject {s + 1} / {self.data.nsubjects}')
-                        fits_type2_subject[s] = subject_estimation(
+                    # Single-subject fits via MLE
+                    use_multiproc_for_subject_loop = self.cfg.optim_multiproc and (self.data.nsubjects >= 8) and (self.cfg._optim_multiproc_cores_effective >= 8)
+                    def subject_loop(s):
+                        return subject_estimation(
                             self.compute_type2_negll, self.cfg.paramset_type2, args=[s] + args_type2,
-                            gridsearch=self.cfg.optim_type2_gridsearch, grid_multiproc=self.cfg.optim_grid_multiproc,
+                            gridsearch=self.cfg.optim_type2_gridsearch,
+                            multiproc=self.cfg.optim_multiproc and not use_multiproc_for_subject_loop,
+                            multiproc_cores=self.cfg._optim_multiproc_cores_effective,
                             minimize_along_grid=self.cfg.optim_type2_minimize_along_grid,
                             global_minimization=self.cfg.optim_type2_global_minimization,
                             fine_gridsearch=self.cfg.optim_type2_fine_gridsearch,
                             scipy_solvers=self.cfg.optim_type2_scipy_solvers, slsqp_epsilon=self.cfg.optim_type2_slsqp_epsilon,
                             guess=initial_guess,
-                            verbose=verbose
+                            verbosity=verbosity
                         )
+                    if self.cfg.optim_multiproc and use_multiproc_for_subject_loop:
+                        with DillPool(self.cfg._optim_multiproc_cores_effective) as pool:
+                            fits_type2_subject = pool.map(subject_loop, range(self.data.nsubjects))
+                    else:
+                        fits_type2_subject = [None for _ in range(self.data.nsubjects)]
+                        for s in range(self.data.nsubjects):
+                            if (verbosity > 0) and (self.data.nsubjects > 1):
+                                print(f'{TAB} Subject {s + 1} / {self.data.nsubjects}')
+                            fits_type2_subject[s] = subject_loop(s)
 
                     # Store single-subject results
                     params_subject = [fits_type2_subject[s].x for s in range(self.data.nsubjects)]
@@ -258,7 +284,7 @@ class ReMeta:
                         params=params_subject, fun=self.compute_type2_negll, args=args_type2,
                         stage='type2', fit=fits_type2_subject
                     )
-                    if verbose:
+                    if verbosity:
                         print(f'{TAB}.. finished ({timeit.default_timer() - tind:.1f} secs).')
 
                     # Group fit
@@ -273,8 +299,10 @@ class ReMeta:
                                 bounds=self.cfg.paramset_type2.bounds,
                                 idx_fe=idx_fe,
                                 idx_re=idx_re,
+                                multiproc=self.cfg.optim_multiproc,
+                                multiproc_cores=self.cfg._optim_multiproc_cores_effective,
                                 max_iter=30, sigma_floor=1e-3, damping=0.5,
-                                verbose=verbose
+                                verbosity=verbosity
                             )
                             self.result.type2.init_group()
                             self.result.type2.group.store(
@@ -285,7 +313,7 @@ class ReMeta:
                                 pop_mean_sd=fit_type2_group.x_re_pop_mean_sd
                             )
             self.result.type2.store(cfg=self.cfg, data=self.data, fun=self.compute_type2_negll, args=args_type2)
-            if verbose:
+            if verbosity:
                 self.result.type2.report_fit(self.cfg)
 
         self.result.store(self.cfg)
@@ -293,7 +321,7 @@ class ReMeta:
 
         if not ignore_warnings:
             print_warnings(w)
-        if verbose:
+        if verbosity:
             print('Type 2 level finished')
 
     def summary(self, generative=True, generative_nsamples=1000, squeeze=True):
@@ -320,7 +348,7 @@ class ReMeta:
             c_conf_generative = [np.empty((generative_nsamples, self.data.nsamples[s])) for s in range(self.data.nsubjects)]
             for s in range(self.data.nsubjects):
                 c_conf_generative[s] = simu_data(self.result.params[s], nsubjects=generative_nsamples, nsamples=self.data.nsamples[s],
-                                                 cfg=self.cfg, stimuli_external=self.data.x_stim[s], verbose=False).confidence
+                                                 cfg=self.cfg, stimuli_external=self.data.x_stim[s], verbosity=0).confidence
         else:
             c_conf_generative = None
         model_summary = self.result.summary(
@@ -756,7 +784,7 @@ class ReMeta:
         )
 
 
-def load_dataset(name, verbose=True, return_data_only=False):
+def load_dataset(name, verbosity=1, return_data_only=False):
     import gzip
     path = os.path.join(pathlib.Path(__file__).parent.resolve(), 'demo_data', f'example_data_{name}.pkl.gz')
     if os.path.exists(path):
@@ -765,7 +793,7 @@ def load_dataset(name, verbose=True, return_data_only=False):
     else:
         raise FileNotFoundError(f'[Dataset does not exist!] No such file: {path}')
 
-    if verbose:
+    if verbosity:
         print_dataset_characteristics(dataset)
 
     if return_data_only:

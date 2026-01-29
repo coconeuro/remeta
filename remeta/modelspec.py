@@ -456,16 +456,21 @@ class Summary(ReprMixin):
         result = deepcopy(self)
 
         if c_conf_generative is not None:
+            result.type2.confidence_gen_pearson = np.full(result.nsubjects, np.nan)
+            result.type2.confidence_gen_spearman = np.full(result.nsubjects, np.nan)
+            result.type2.confidence_gen_mae = np.full(result.nsubjects, np.nan)
+            result.type2.confidence_gen_medae = np.full(result.nsubjects, np.nan)
+            np.full(result.nsubjects, np.nan)
             for s in range(result.nsubjects):
                 confidence_tiled = np.tile(c_conf_empirical[s], (c_conf_generative[s].shape[0], 1))
                 with (warnings.catch_warnings()):
                     warnings.filterwarnings("ignore", message="All-NaN slice encountered", category=RuntimeWarning)
-                    result.type2.confidence_gen_pearson = \
+                    result.type2.confidence_gen_pearson[s] = \
                         np.nanmedian(pearson2d(c_conf_generative[s], confidence_tiled))
-                    result.type2.confidence_gen_spearman = \
+                    result.type2.confidence_gen_spearman[s] = \
                         np.nanmedian(spearman2d(c_conf_generative[s], confidence_tiled))
-                result.type2.confidence_gen_mae = np.nanmean(np.abs(c_conf_generative[s] - c_conf_empirical[s]))
-                result.type2.confidence_gen_medae = np.nanmedian(np.abs(c_conf_generative[s] - c_conf_empirical[s]))
+                result.type2.confidence_gen_mae[s] = np.nanmean(np.abs(c_conf_generative[s] - c_conf_empirical[s]))
+                result.type2.confidence_gen_medae[s] = np.nanmedian(np.abs(c_conf_generative[s] - c_conf_empirical[s]))
 
 
 
