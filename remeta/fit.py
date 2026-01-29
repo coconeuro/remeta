@@ -308,7 +308,7 @@ def group_estimation(fun, nsubjects, params_init, bounds, idx_fe, idx_re,
 
         if verbosity and (np.mod(it, 10) == 0):
             convergence_str = f' (Convergence: {np.max(np.abs(uparams_mean - uparams_mean_new)):.8f})' if len(idx_re) > 0 else ''
-            print(f'{TAB}{TAB}[{datetime.now().strftime('%H:%M:%S')}] Iteration {it+1} / {max_iter}{convergence_str}')
+            print(f"{TAB}{TAB}[{datetime.now().strftime('%H:%M:%S')}] Iteration {it+1} / {max_iter}{convergence_str}")
 
     if len(idx_re) > 0:
         params = transform_to_constrained_space(uparams_init, bounds)
