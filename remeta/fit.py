@@ -277,7 +277,7 @@ def group_estimation(fun, nsubjects, params_init, bounds, idx_fe, idx_re,
                 ).x
             if multiproc:
                 with DillPool(multiproc_cores) as pool:
-                    uparams_init = pool.map(subject_loop, range(nsubjects))
+                    uparams_init = np.array(pool.map(subject_loop, range(nsubjects)))
             else:
                 for s in range(nsubjects):
                     uparams_init[s] = subject_loop(s)
