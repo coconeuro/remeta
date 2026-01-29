@@ -2,7 +2,6 @@ import timeit
 import warnings
 from functools import partial
 from itertools import product
-from multiprocessing import cpu_count
 
 import numpy as np
 try:  # only necessary if multiple cores should be used
@@ -16,9 +15,9 @@ from scipy.optimize._constraints import old_bound_to_new  # noqa
 from .util import TAB, SP2
 from .util import _slsqp_epsilon
 
-def loop(fun, params, args, gridsize, minimize_along_grid, bounds, verbose, param_id):
+def loop(fun, params, args, gridsize, minimize_along_grid, bounds, verbosity, param_id):
     # t0 = timeit.default_timer()
-    if param_id and verbose and (np.mod(param_id, 1000) == 0):
+    if param_id and (verbosity > 1) and (np.mod(param_id, 1000) == 0):
         print(f'{TAB}{TAB}Grid iteration {param_id} / {gridsize}')
     negll = fun(params[param_id], *args)
 
@@ -33,20 +32,21 @@ def loop(fun, params, args, gridsize, minimize_along_grid, bounds, verbose, para
     return negll, x
 
 
-def fgrid(fun, valid, args, grid_multiproc, minimize_along_grid=False, bounds=None, verbose=True):
-    if grid_multiproc:
-        with DillPool(cpu_count() - 1 or 1) as pool:
-            result = pool.map(partial(loop, fun, valid, args, len(valid), minimize_along_grid, bounds, verbose), range(len(valid)))
+def fgrid(fun, valid, args, multiproc=False, multiproc_cores=1, minimize_along_grid=False, bounds=None, verbosity=1):
+    if multiproc:
+        with DillPool(multiproc_cores) as pool:
+            result = pool.map(partial(loop, fun, valid, args, len(valid), minimize_along_grid, bounds, verbosity), range(len(valid)))
             negll_grid, x_grid = [res[0] for res in result], [res[1] for res in result]
     else:
         negll_grid = [None] * len(valid)
         x_grid = [None] * len(valid)
         for i, param in enumerate(valid):
-            negll_grid[i], x_grid[i] = loop(fun, valid, args, len(valid), minimize_along_grid, bounds, verbose, i)
+            negll_grid[i], x_grid[i] = loop(fun, valid, args, len(valid), minimize_along_grid, bounds, verbosity, i)
     return negll_grid, x_grid
 
 
-def fine_grid_search(x0, fun, args, param_set, ll_grid, valid, gridsearch_resolution, n_grid_iter, grid_multiproc, verbose=True):
+def fine_grid_search(x0, fun, args, param_set, ll_grid, valid, gridsearch_resolution, n_grid_iter, multiproc=False,
+                     multiproc_cores=1, verbosity=1):
     n_grid_candidates_init = 3 * gridsearch_resolution
     gx0 = x0
     gll_min_grid = np.min(ll_grid)
@@ -55,7 +55,7 @@ def fine_grid_search(x0, fun, args, param_set, ll_grid, valid, gridsearch_resolu
     candidate_ids = list(range(n_grid_candidates_init))
     counter = 0
     for i in range(n_grid_iter):
-        if verbose and (np.mod(i, 10) == 0):
+        if (verbosity > 1) and (np.mod(i, 10) == 0):
             print(f'{TAB}Grid iteration {i + 1} / {n_grid_iter}')
         gvalid = []
         valid_candidate_ids = []
@@ -75,9 +75,9 @@ def fine_grid_search(x0, fun, args, param_set, ll_grid, valid, gridsearch_resolu
                                     np.all([con['fun'](p) >= 0 for con in param_set.constraints])]
             gvalid += gvalid_candidate
             valid_candidate_ids += [j] * len(gvalid_candidate)
-            if verbose:
+            if verbosity > 1:
                 print(f'{TAB}{TAB}Candidate {j + 1}: {[(p[0], p[-1]) for p in grid_range[j]]}')  # noqa
-        gll_grid = fgrid(fun, gvalid, args, grid_multiproc, verbose=False)[0]
+        gll_grid = fgrid(fun, gvalid, args, multiproc, multiproc_cores, verbosity=0)[0]
         counter += len(gvalid)
 
         min_id = np.argmin(gll_grid)
@@ -85,7 +85,7 @@ def fine_grid_search(x0, fun, args, param_set, ll_grid, valid, gridsearch_resolu
             gll_min_grid = gll_grid[min_id]
             gx0 = gvalid[min_id]
 
-        if verbose:
+        if verbosity:
             print(f'{TAB}{TAB}Best fit: {gx0} (LL={gll_min_grid})')
 
         if i != n_grid_iter - 1:
@@ -102,14 +102,14 @@ def fine_grid_search(x0, fun, args, param_set, ll_grid, valid, gridsearch_resolu
     return fit
 
 
-def subject_estimation(fun, param_set, args=(), gridsearch=False, grid_multiproc=True, minimize_along_grid=False,
-                       global_minimization=None, fine_gridsearch=False, verbose=True,
+def subject_estimation(fun, param_set, args=(), gridsearch=False, multiproc=True, multiproc_cores=1,
+                       minimize_along_grid=False, global_minimization=None, fine_gridsearch=False, verbosity=1,
                        n_grid_candidates=10, n_grid_iter=3, scipy_solvers='slsqp', slsqp_epsilon=_slsqp_epsilon,
                        guess=None):
 
     t0 = timeit.default_timer()
 
-    # if verbose:
+    # if verbosity:
     #     negll_initial_guess = fun(param_set.guess, *args)
     #     print(f'{TAB}{TAB}Initial guess (neg. LL: {negll_initial_guess:.2f})')
     #     for i, p in enumerate(param_set.param_names_flat):
@@ -133,14 +133,14 @@ def subject_estimation(fun, param_set, args=(), gridsearch=False, grid_multiproc
                      np.all([con['fun'](p) >= 0 for con in param_set.constraints])]
         else:
             valid = list(product(*param_set.grid_range))
-        if verbose:
+        if verbosity > 1:
             print(f"{TAB}{TAB}Grid search activated (grid size = {len(valid)})")
         t0 = timeit.default_timer()
-        ll_grid, x_grid = fgrid(fun, valid, args, grid_multiproc, minimize_along_grid, bounds, verbose=verbose)
+        ll_grid, x_grid = fgrid(fun, valid, args, multiproc, multiproc_cores, minimize_along_grid, bounds, verbosity=verbosity)
         x0_grid = x_grid[np.argmin(ll_grid)]
         ll_min_grid = np.min(ll_grid)
         grid_time = timeit.default_timer() - t0
-        if verbose:
+        if verbosity > 1:
             for i, p in enumerate(param_set.param_names_flat):
                 if p.startswith('type2_criteria') and not p.endswith('0'):
                     criterion_id = int(p.split('_')[-1])
@@ -158,10 +158,10 @@ def subject_estimation(fun, param_set, args=(), gridsearch=False, grid_multiproc
 
     if fine_gridsearch:
         fit_fine = fine_grid_search(x0_grid if gridsearch else x0, fun, args, param_set, ll_grid, valid, n_grid_candidates,
-                                    n_grid_iter, grid_multiproc, verbose=verbose).x
+                                    n_grid_iter, multiproc, multiproc_cores, verbosity=verbosity).x
 
     if global_minimization is not None:
-        # if verbose:
+        # if verbosity:
         #     print(f'{TAB}{TAB}Performing MLE (global minimization)')
         t_global = timeit.default_timer()
         # fit_global = basinhopping(fun, fit_best.x, take_step=RandomDisplacementBoundsConstraints(bounds, param_set.constraints),
@@ -187,13 +187,13 @@ def subject_estimation(fun, param_set, args=(), gridsearch=False, grid_multiproc
 
         execution_time_global = timeit.default_timer() - t_global
         x0_global = fit_global.x
-        if verbose:
+        if verbosity:
             print(f'{TAB}{TAB}{TAB}.. global MLE finished ({execution_time_global:.1f} secs).')
     else:
         x0_global = None
         execution_time_global = None
 
-    # if verbose:
+    # if verbosity:
     #     print(f'{TAB}{TAB}Performing MLE (local minimization)')
 
     t_local = timeit.default_timer()
@@ -226,18 +226,18 @@ def subject_estimation(fun, param_set, args=(), gridsearch=False, grid_multiproc
     fit_best.execution_time_local = timeit.default_timer() - t_local
     fit_best.best_solver = best_solver
     fit_best.x0_grid = x0_grid
-    # if verbose:
+    # if verbosity:
     #     print(f'{TAB}{TAB}{TAB}.. local MLE finished ({fit_best.execution_time_local:.1f} secs).')
 
     return fit_best
 
 
 def group_estimation(fun, nsubjects, params_init, bounds, idx_fe, idx_re,
-                     max_iter=30, sigma_floor=1e-3, damping=0.5, verbose=False):
+                     multiproc=True, multiproc_cores=1, max_iter=30, sigma_floor=1e-3, damping=0.5, verbosity=1):
 
     params_init = np.array(params_init)
 
-    if verbose:
+    if verbosity:
         print(f'\n{SP2}Group-level optimization (MLE / MAP)')
     t0 = timeit.default_timer()
 
@@ -267,15 +267,29 @@ def group_estimation(fun, nsubjects, params_init, bounds, idx_fe, idx_re,
             uparams_fe[idx_fe] = sciopt.minimize(objective_fe_packed, x0=x0, method='L-BFGS-B').x
 
         if len(idx_re) > 0:
-            for s in range(nsubjects):
-                res = sciopt.minimize(
+
+            def subject_loop(s):
+                return sciopt.minimize(
                     objective_empirical_bayes,
                     x0=uparams_init[s],
                     args=(s, fun, bounds, idx_re, uparams_mean, uparams_sd, idx_fe, uparams_fe),
                     method='L-BFGS-B'
-                )
-                uparams_init[s] = res.x
+                ).x
+            if multiproc:
+                with DillPool(multiproc_cores) as pool:
+                    uparams_init = pool.map(subject_loop, range(nsubjects))
+            else:
+                for s in range(nsubjects):
+                    uparams_init[s] = subject_loop(s)
 
+            # for s in range(nsubjects):
+            #     res = sciopt.minimize(
+            #         objective_empirical_bayes,
+            #         x0=uparams_init[s],
+            #         args=(s, fun, bounds, idx_re, uparams_mean, uparams_sd, idx_fe, uparams_fe),
+            #         method='L-BFGS-B'
+            #     )
+            #     uparams_init[s] = res.x
 
             # --- hyperparameter update (moment matching) ---
             uparams_mean_new = uparams_mean.copy()
@@ -292,7 +306,7 @@ def group_estimation(fun, nsubjects, params_init, bounds, idx_fe, idx_re,
             # optional: check convergence
             # if np.max(np.abs(uparams_re_init_mean - uparams_mean_new)) < 1e-4: break
 
-        if verbose and (np.mod(it, 10) == 0):
+        if verbosity and (np.mod(it, 10) == 0):
             convergence_str = f' (Convergence: {np.max(np.abs(uparams_mean - uparams_mean_new)):.8f})' if len(idx_re) > 0 else ''
             print(f'{TAB}{TAB}[{datetime.now().strftime('%H:%M:%S')}] Iteration {it+1} / {max_iter}{convergence_str}')
 
@@ -309,7 +323,7 @@ def group_estimation(fun, nsubjects, params_init, bounds, idx_fe, idx_re,
         result.x_re_pop_mean_sd = population_summary(uparams_mean, uparams_sd, bounds, idx_re)
     else:
         result.x_re_pop_mean_sd = None
-    if verbose:
+    if verbosity:
         print(f'{TAB}.. finished ({result.execution_time:.1f} secs).')
 
     return result
