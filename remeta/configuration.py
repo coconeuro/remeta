@@ -146,8 +146,11 @@ class Configuration(ReprMixin):
     optim_type2_slsqp_epsilon : float or Tuple/List (default: None)
         Set parameter epsilon parameter for the SLSQP optimization method (type 2).
         If provided as Tuple/List, test different eps parameters and take the best
-    optim_grid_multiproc : bool (default: False)
-        If True, use all available cores for the gridsearch search. If False, use a single core.
+    optim_multiproc : bool (default: False)
+        If True, use all optim_multiproc_cores cores for parameter estimation. If False, use a single core.
+    optim_multiproc_cores : int (default: -1)
+        If multicore processing es enabled via optim_multiproc, use optim_multiproc_cores cores for parameter estimation
+        (-1 for all cores minus 1).
 
     *** Preprocessing ***
     normalize_stimuli_by_max : bool (default: True)
@@ -247,7 +250,9 @@ class Configuration(ReprMixin):
     optim_type2_global_minimization: str = None
     optim_type2_scipy_solvers: str | List[str] | Tuple[str, ...] = ('slsqp', 'Nelder-Mead')
     optim_type2_slsqp_epsilon: float = None
-    optim_grid_multiproc: bool = False
+    optim_multiproc: bool = False
+    optim_multiproc_cores: int = -1
+    _optim_multiproc_cores_effective: int = None
 
     normalize_stimuli_by_max: bool = True
     confidence_bounds_error: float = 0
@@ -287,7 +292,12 @@ class Configuration(ReprMixin):
 
         if find_spec('multiprocessing_on_dill') is None:
             warnings.warn(f'Multiprocessing on dill is not installed. Setting grid_multiproc is changed to False.')
-            self.optim_grid_multiproc = False
+            self.optim_multiproc = False
+
+        if self.optim_multiproc:
+            from multiprocessing import cpu_count
+            self._optim_multiproc_cores_effective = max(1, (cpu_count() or 1) - 1) if self.optim_multiproc_cores == -1 \
+                else self.optim_multiproc_cores
 
         self._prepare_params_type1()
         if self.skip_type2:
