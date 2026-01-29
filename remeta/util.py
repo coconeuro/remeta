@@ -272,20 +272,17 @@ def print_dataset_characteristics(sim):
             print(f'{TAB}{p}: {np.array2string(np.array(v), precision=3)}')
         if sim.params_extra is not None:
             if 'type2_criteria_absolute' in sim.params_extra:
-                print(f'{TAB}Type 2 criteria (absolute): [{", ".join([f"{c:.5g}" for c in sim.params_extra['type2_criteria_absolute']])}]')
+                print(f"{TAB}Type 2 criteria (absolute): [{', '.join([f'{c:.5g}' for c in sim.params_extra['type2_criteria_absolute']])}]")
             if 'type2_criteria_bias' in sim.params_extra:
-                print(f'{TAB}Criterion bias: {sim.params_extra['type2_criteria_bias']:.5g}')
+                print(f"{TAB}Criterion bias: {sim.params_extra['type2_criteria_bias']:.5g}")
     print('..Descriptive statistics:')
     print(f'{TAB}No. subjects: {sim.nsubjects}')
     print(f'{TAB}No. samples: {sim.nsamples}')
     if sim.type1_stats is not None:
-        print(f'{TAB}Performance: {100 * sim.type1_stats['accuracy']:.1f}% correct')
+        print(f"{TAB}Performance: {100 * sim.type1_stats['accuracy']:.1f}% correct")
         print(f"{TAB}Choice bias: {('-', '+')[int(sim.type1_stats['choice_bias'] > 0.5)]}{100*np.abs(sim.type1_stats['choice_bias'] - 0.5):.1f}%")
     if not sim.cfg.skip_type2 and sim.type2_stats is not None:
-        print(f'{TAB}Confidence: {sim.type2_stats['confidence']:.2f}')
-        print(f'{TAB}M-Ratio: {sim.type2_stats['mratio']:.2f}')
-        print(f'{TAB}AUROC2: {sim.type2_stats['auroc2']:.2f}')
+        print(f"{TAB}Confidence: {sim.type2_stats['confidence']:.2f}")
+        print(f"{TAB}M-Ratio: {sim.type2_stats['mratio']:.2f}")
+        print(f"{TAB}AUROC2: {sim.type2_stats['auroc2']:.2f}")
     print('----------------------------------')
-
-if __name__ == '__main__':
-    empty_list(2, 3, [3, 4])[0].shape
