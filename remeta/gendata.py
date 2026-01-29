@@ -171,8 +171,8 @@ def simu_data(params, nsubjects=1, nsamples=1000, cfg=None, stimuli_external=Non
                     warnings.warn(
                        '\nThe first entry of the criterion list is a criterion, whereas the subsequent entries encode\n'
                        'the gap to the respective previous criterion. Hence, the sum of all entries in the criterion\n'
-                       f'list must be smaller than 1, but sum([{", ".join([f"{c:.3f}" for c in old_criteria])}]) = {sum_criteria:.3f}). '
-                       f'Changing criteria to [{", ".join([f"{c:.3f}" for c in params['type2_criteria']])}].', UserWarning)
+                       f"list must be smaller than 1, but sum([{', '.join([f'{c:.3f}' for c in old_criteria])}]) = {sum_criteria:.3f})."
+                       f"Changing criteria to [{', '.join([f'{c:.3f}' for c in params['type2_criteria']])}].", UserWarning)
                 first_criterion_and_gaps = params['type2_criteria']
                 criteria = [v if i == 0 else np.sum(first_criterion_and_gaps[:i+1]) for i, v in enumerate(first_criterion_and_gaps)]
             else:
@@ -180,10 +180,10 @@ def simu_data(params, nsubjects=1, nsamples=1000, cfg=None, stimuli_external=Non
                 criteria = [v if i == 0 else np.sum(first_criterion_and_gaps[:i+1]) for i, v in enumerate(first_criterion_and_gaps)]
                 warnings.warn(
                     '\nType 2 criteria enabled, but type2_criteria have not been specified. Using default values\n'
-                    f'of a Bayesian confidence observer for {cfg.n_discrete_confidence_levels} discrete ratings: [{', '.join([f"{v:.3g}" for v in first_criterion_and_gaps])}].\n'
+                    f"of a Bayesian confidence observer for {cfg.n_discrete_confidence_levels} discrete ratings: [{', '.join([f'{v:.3g}' for v in first_criterion_and_gaps])}].\n"
                     'Note that the first entry of the criterion list is a criterion, whereas the subsequent\n'
                     f'entries encode the gap to the respective previous criterion.\n'
-                    f'The final criteria are: [{', '.join([f"{v:.3g}" for v in criteria])}]', UserWarning)
+                    f"The final criteria are: [{', '.join([f'{v:.3g}' for v in criteria])}]", UserWarning)
 
             c_conf = (np.digitize(c_conf, criteria) + 0.5) / cfg.n_discrete_confidence_levels
             c_conf_base = (np.digitize(c_conf_base, criteria) + 0.5) / cfg.n_discrete_confidence_levels
