@@ -7,7 +7,7 @@ Go directly to:
 
 # ReMeta Toolbox: installation
 
-Remeta requires a working Python installation. It should run with Python >=3.6.
+Remeta requires a working Python installation. It should run with Python >=3.9.
 
 The ReMeta itself can be installed with `pip`:
 ```
