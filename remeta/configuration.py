@@ -1,7 +1,7 @@
+from __future__ import annotations
 import warnings
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
-from __future__ import annotations
 
 import numpy as np
 from importlib.util import find_spec
