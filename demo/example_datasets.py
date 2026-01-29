@@ -96,7 +96,7 @@ elif mode == 'noisy_temperature':
 
 
 np.random.seed(seed)
-data = remeta.simu_data(nsubjects=1, nsamples=nsamples, params=params, cfg=cfg, x_stim_external=None, verbose=True,
+data = remeta.simu_data(nsubjects=1, nsamples=nsamples, params=params, cfg=cfg, x_stim_external=None, verbosity=True,
                         x_stim_stepsize=x_stim_stepsize, squeeze=True, compute_stats=True)
 
 path = os.path.join(pathlib.Path(__file__).parent.resolve(), '..', 'remeta/demo_data', f'example_data_{mode}.pkl.gz')
