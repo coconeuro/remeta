@@ -47,8 +47,10 @@ plugins:
             relative_crossrefs: true
             show_bases: false
             show_root_toc_entry: false
-            members: true
-            inherited_members: true
+            members:
+              - classes
+              - functions
+#            inherited_members: true
 #            show_root_heading: true
 #            show_root_full_path: false
 
