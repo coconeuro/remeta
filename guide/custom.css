@@ -48,7 +48,7 @@ nav.myst-primary-sidebar-toc > div.myst-toc > a:nth-child(3) {
 }
 
 /* Style Github icon */
-a[href^="https://github.com/"] {
+nav.myst-top-nav-bar div.hidden.sm\:block > a[href^="https://github.com/"] {
   font-size: 0;            /* hide text */
   width: 2.25rem;
   height: 2.25rem;
@@ -69,6 +69,6 @@ a[href^="https://github.com/"] {
 }
 
 /* Somehow this disables the hover effect on the Github icon */
-div.hidden.sm\:block > a[href^="https://github.com/"]  {
+nav.myst-top-nav-bar div.hidden.sm\:block > a[href^="https://github.com/"]  {
   background-color: black !important;
 }
