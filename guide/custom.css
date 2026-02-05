@@ -1,0 +1,54 @@
+/* Hide the download/source button in the navigation bar */
+.downloads-dropdown,
+[class*="downloads"],
+[class*="Downloads"],
+.group\/downloads,
+nav button[aria-label*="download" i],
+nav button[aria-label*="Download" i],
+nav a[aria-label*="download" i],
+nav a[aria-label*="Download" i],
+.article-nav button svg[role="img"],
+[aria-label="Downloads"] {
+    display: none !important;
+}
+
+.myst-search-shortcut {
+    display: none;
+}
+
+.myst-theme-button {
+    display: none;
+}
+
+/* Justify text in the main content container */
+main p,
+article p {
+    text-align: justify;
+}
+
+
+/* @media (min-width: 1280px) {
+    .article {
+        margin-left: 230px;
+    }
+
+    .article {
+        grid-template-columns:
+            [screen-start] 0rem [page-start] 3rem [body-start] 1fr [body-end] 500px [page-end] 0rem [screen-end] !important;
+    }
+
+    .article-grid {
+        grid-template-columns:
+            [screen-start] 3rem [body-start gutter-left-start] 1rem [body-inset-start] minmax(8ch, 10ch) [middle-start] minmax(8ch, 10ch) [gutter-left-end] minmax(8ch, 10ch) minmax(8ch, 10ch) [gutter-right-start] minmax(8ch, 10ch) [middle-end] minmax(8ch, 10ch) [body-inset-end] 1rem [body-end gutter-right-end] 3rem [body-outset-end] minmax(5rem, 13rem) [page-inset-end] 3rem [page-end] 1fr [screen-inset-end] .25rem [screen-end];
+    }
+
+    .xl\:col-margin-left {
+        left: 30px !important;
+        position: fixed !important;
+    }
+
+    .xl\:ml-7 {
+        margin-left: 0rem !important;
+    }
+
+} */
