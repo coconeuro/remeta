@@ -33,7 +33,6 @@ jobs:
           personal_token: ${{ secrets.PAGES_DEPLOY_TOKEN }}
           external_repository: re-meta/re-meta.github.io
           publish_branch: main
-          publish_dir: api/site
           destination_dir: api
           publish_dir: api/site
           keep_files: true
