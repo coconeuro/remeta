@@ -1,15 +1,27 @@
 site_name: API
+site_url: https://re-meta.github.io/api/
 
 theme:
   name: "material"
-  logo: assets/logo.png
-
+  custom_dir: overrides
+  logo: img/logo_api.png
+  favicon: img/favicon.svg
+  icon:
+    repo: custom/github
   palette:
     - scheme: default
       primary: white
+  features:
+    - navigation.tabs
+
+repo_url: https://github.com/coconeuro/remeta
+repo_name: 'GitHub'
 
 extra_css:
   - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/external-tabs.js
 
 extra:
   generator: false
@@ -32,8 +44,11 @@ plugins:
             show_source: true
             relative_crossrefs: true
             show_bases: false
+            show_root_toc_entry: false
 
 nav:
-  - Plotting: plot.md
-  - Simulation: gendata.md
-  - Configuration: configuration.md
+  - API:
+    - Plotting: plot.md
+    - Simulation: gendata.md
+    - Configuration: configuration.md
+  - → ReMeta Guide: https://re-meta.github.io

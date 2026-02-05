@@ -4,3 +4,13 @@
   white-space: pre-wrap;
   overflow-x: auto;
 }
+
+/* Hides the Site title */
+.md-header__topic {
+  display: none;
+}
+
+/* Make the API "tab" bold */
+.md-tabs__item--active > .md-tabs__link {
+  font-weight: 700;
+}
