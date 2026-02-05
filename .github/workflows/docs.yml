@@ -19,13 +19,15 @@ jobs:
           # If you keep a requirements file for the docs build, use it:
           # if [ -f api/requirements.txt ]; then pip install -r api/requirements.txt; fi
           # Otherwise ensure at least these:
-          pip install mkdocs-material mkdocstrings[python]
+          pip install -U pip
+          pip install -e .
+          pip install mkdocs-material mkdocstrings[python] mkdocs-autorefs
 
       - name: Build docs from api/mkdocs.yml
         run: |
           # If mkdocstrings needs to import your repo package, uncomment:
           # export PYTHONPATH="$GITHUB_WORKSPACE"
-          mkdocs build --clean --config-file api/mkdocs.yml
+          mkdocs build -v --clean --config-file api/mkdocs.yml
 
       - name: Push api/site to re-meta/re-meta.github.io
         uses: peaceiris/actions-gh-pages@v4
