@@ -28,6 +28,7 @@ jobs:
           set -euo pipefail
           cd guide
           jupyter book build --html --strict
+          cp -f img/favicon.ico _build/html/favicon.ico
           test -f _build/html/index.html
 
       - name: Deploy book to root of re-meta.github.io (keep /api)
