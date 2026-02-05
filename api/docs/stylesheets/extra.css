@@ -1,0 +1,6 @@
+/* Wrap signatures (instead of horizontal scroll  */
+.md-typeset .highlight pre,
+.md-typeset code {
+  white-space: pre-wrap;
+  overflow-x: auto;
+}

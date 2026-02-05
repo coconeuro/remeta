@@ -1,0 +1,39 @@
+site_name: API
+
+theme:
+  name: "material"
+  logo: assets/logo.png
+
+  palette:
+    - scheme: default
+      primary: white
+
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  generator: false
+
+plugins:
+  - search
+  - autorefs
+  - mkdocstrings:
+      default_handler: python
+      locale: en
+      handlers:
+        python:
+          paths:
+            - ..  # include parent directory
+          options:
+            docstring_style: google   # or numpy
+            show_signature_annotations: true
+            separate_signature: true
+            show_docstring_parameters: true
+            show_source: true
+            relative_crossrefs: true
+            show_bases: false
+
+nav:
+  - Plotting: plot.md
+  - Simulation: gendata.md
+  - Configuration: configuration.md
