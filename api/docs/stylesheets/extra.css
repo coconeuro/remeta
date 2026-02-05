@@ -14,3 +14,14 @@
 .md-tabs__item--active > .md-tabs__link {
   font-weight: 700;
 }
+
+/* Make top-level menu items bold */
+.md-nav--primary[data-md-level="0"] > .md-nav__list > .md-nav__item > .md-nav__link,
+.md-nav--primary[data-md-level="0"] > .md-nav__list > .md-nav__item > label.md-nav__link {
+  font-weight: 700 !important;
+}
+
+/* Hide navigation title */
+.md-nav__title[for="__drawer"] {
+  display: none;
+}

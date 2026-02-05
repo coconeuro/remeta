@@ -1,4 +1,4 @@
-site_name: API
+site_name: ReMeta API
 site_url: https://re-meta.github.io/api/
 
 theme:
@@ -12,7 +12,9 @@ theme:
     - scheme: default
       primary: white
   features:
-    - navigation.tabs
+    - navigation.expand
+#  features:
+#    - navigation.tabs
 
 repo_url: https://github.com/coconeuro/remeta
 repo_name: 'GitHub'
@@ -47,8 +49,9 @@ plugins:
             show_root_toc_entry: false
 
 nav:
+  - ReMeta Guide:
+    - → re-meta.github.io ⮺: https://re-meta.github.io
   - API:
     - Plotting: plot.md
     - Simulation: gendata.md
     - Configuration: configuration.md
-  - → ReMeta Guide: https://re-meta.github.io
