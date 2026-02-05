@@ -1,4 +1,4 @@
-name: Deploy MkDocs (api directory) to re-meta/re-meta.github.io
+name: Deploy MkDocs (api directory) to re-meta.github.io/api
 
 on:
   push:
@@ -34,4 +34,6 @@ jobs:
           external_repository: re-meta/re-meta.github.io
           publish_branch: main
           publish_dir: api/site
-          force_orphan: true
+          destination_dir: api
+          publish_dir: api/site
+          keep_files: true
