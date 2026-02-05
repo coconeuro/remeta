@@ -22,7 +22,7 @@ site:
     - title: Home
       url: /
     - title: → Go to API
-      url: https://remeta.github.io/api
+      url: https://re-meta.github.io/api
       external: true
   options:
     style: custom.css
