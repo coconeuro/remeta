@@ -30,7 +30,7 @@ site:
   options:
     style: custom.css
     logo: img/logo.png
-    favicon: img/favicon.svg
+    favicon: _static/favicon.svg
     # logo_text: ReMeta Guide
     secondary_sidebar_items: []
     hide_outline: false
