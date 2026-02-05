@@ -49,8 +49,7 @@ plugins:
             show_root_toc_entry: false
 
 nav:
-  - ReMeta Guide:
-    - → re-meta.github.io ⮺: https://re-meta.github.io
+  - → Guide ⮺: https://re-meta.github.io
   - API:
     - Plotting: plot.md
     - Simulation: gendata.md
