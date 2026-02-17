@@ -6,7 +6,7 @@ The ReMeta ("Reverse engineering of Metacognition") toolbox allows researchers t
 
 **Original paper:** Guggenmos, M. (2022). Reverse engineering of metacognition. eLife, 11. https://doi.org/10.7554/elife.75420
 
-**Citation for Toolbox:** Guggenmos, M. (<year-of-release>). ReMeta toolbox (Version X.Y.Z) [Computer software]. GitHub. https://github.com/coconeuro/remeta
+**Citation for Toolbox:** Guggenmos, M. (Year of release). ReMeta toolbox (Version X.Y.Z) [Computer software]. GitHub. https://github.com/coconeuro/remeta
 
 
 ### Installation
