@@ -6,6 +6,7 @@ import pathlib
 import gzip
 
 mode = 'default'
+# mode = 'group'
 # mode = 'type1_only'
 # mode = 'type1_complex'
 # mode = 'type2_multiplicative_bias'
@@ -13,25 +14,39 @@ mode = 'default'
 # mode = 'noisy_temperature'
 
 
-bounds = np.arange(0, 0.81, 0.2)
-
 skip_type2 = False
 if mode == 'default':
+    nsubjects = 1
     nsamples = 2000
     seed = 1
-    x_stim_stepsize = 0.25
+    stim_levels = 4
     params = dict(
         type1_noise=0.5,
         type1_bias=-0.1,
         type2_noise=0.3,
-        type2_criteria=[0.2, 0.2, 0.2, 0.2]
+        type2_criteria=[0.25, 0.5, 0.75]
     )
     cfg = remeta.Configuration()
-    cfg.type2_noise_dist = 'truncated_norm_mode'
+    # cfg.param_type2_noise.model = 'truncated_normal_mode'
+if mode == 'group':
+    nsubjects = 3
+    nsamples = 1000
+    seed = 1
+    stim_levels = 4
+    params = dict(
+        type1_noise=0.5,
+        type1_bias=-0.1,
+        type2_noise=0.3,
+        type2_criteria=[0.25, 0.5, 0.75]
+    )
+    cfg = remeta.Configuration()
+    cfg.param_type1_bias.group = 'random'
+    # cfg.param_type2_noise.model = 'truncated_normal_mode'
 elif mode == 'type1_only':
+    nsubjects = 1
     nsamples = 2000
     seed = 1
-    x_stim_stepsize = 0.25
+    stim_levels = 4
     params = dict(
         type1_noise=0.7,
         type1_bias=0.2
@@ -39,65 +54,69 @@ elif mode == 'type1_only':
     cfg = remeta.Configuration()
     cfg.skip_type2 = True
 elif mode == 'type1_complex':
+    nsubjects = 1
     nsamples = 2000
     seed = 1
-    x_stim_stepsize = 0.02
+    stim_levels = 50
     params = dict(
         type1_noise=[0.5, 0.7],
         type1_thresh=0.1,
         type1_bias=[0.6, 0.1],
     )
     cfg = remeta.Configuration()
-    cfg.enable_type1_param_noise = 2
-    cfg.enable_type1_param_thresh = 1
-    cfg.enable_type1_param_bias = 2
+    cfg.param_type1_noise.enable = 2
+    cfg.param_type1_thresh.enable = 1
+    cfg.param_type1_bias.enable = 2
     cfg.skip_type2 = True
 elif mode == 'type2_multiplicative_bias':
+    nsubjects = 1
     nsamples = 2000
     seed = 7
-    x_stim_stepsize = 0.25
+    stim_levels = 4
     params = dict(
         type1_noise=0.6,
         type1_bias=0,
         type2_noise=0.2,
-        type2_evidence_bias_mult=0.8,
+        type2_evidence_bias=0.8,
     )
     cfg = remeta.Configuration()
     # cfg.type2_fitting_type = 'continuous'
-    cfg.enable_type2_param_criteria = 0
-    cfg.enable_type2_param_evidence_bias_mult = 1
-    cfg.type2_noise_dist = 'truncated_norm_mode'
+    cfg.param_type2_criteria.enable = 0
+    cfg.param_type2_evidence_bias.enable = 1
+    # cfg.param_type2_noise.model = 'truncated_normal_mode'
 elif mode == 'noisy_readout':
+    nsubjects = 1
     nsamples = 2000
     seed = 5
-    x_stim_stepsize = 0.25
+    stim_levels = 4
     params = dict(
         type1_noise=0.4,
         type1_bias=0,
         type2_noise=0.4,
-        type2_criteria=[0.3, 0.4, 0.1, 0.1]
+        type2_criteria=[0.3, 0.7, 0.9]
     )
     cfg = remeta.Configuration()
-    cfg.type2_noise_type = 'noisy_readout'
-    cfg.type2_noise_dist = 'lognorm_mode'
+    cfg.type2_noise_type = 'readout'
+    # cfg.param_type2_noise.model = 'lognormal_mode'
 elif mode == 'noisy_temperature':
+    nsubjects = 1
     nsamples = 2000
     seed = 1
-    x_stim_stepsize = 0.25
+    stim_levels = 4
     params = dict(
         type1_noise=0.5,
         type1_bias=0,
         type2_noise=0.25,
-        type2_criteria=[0.3, 0.4, 0.1, 0.1]
+        type2_criteria=[0.3, 0.7, 0.9]
     )
     cfg = remeta.Configuration()
-    cfg.type2_noise_type = 'noisy_temperature'
-    cfg.type2_noise_dist = 'lognorm_mode'
+    cfg.type2_noise_type = 'temperature'
+    # cfg.param_type2_noise.model = 'lognormal_mode'
 
 
 np.random.seed(seed)
-data = remeta.simu_data(nsubjects=1, nsamples=nsamples, params=params, cfg=cfg, x_stim_external=None, verbosity=True,
-                        x_stim_stepsize=x_stim_stepsize, squeeze=True, compute_stats=True)
+data = remeta.simulate(nsubjects=nsubjects, nsamples=nsamples, params=params, cfg=cfg, custom_stimuli=None, verbosity=True,
+                       stim_levels=stim_levels, squeeze=True, compute_stats=True)
 
 path = os.path.join(pathlib.Path(__file__).parent.resolve(), '..', 'remeta/demo_data', f'example_data_{mode}.pkl.gz')
 # save = (data.x_stim, data.d_dec, data.c_conf, params, data.cfg, data.y_decval_mode, stats)
