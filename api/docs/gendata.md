@@ -1,3 +1,0 @@
-# remeta.gendata
-
-::: remeta.gendata

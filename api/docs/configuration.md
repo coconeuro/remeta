@@ -1,3 +1,3 @@
-# remeta.configuration
+# remeta.configuration.Configuration
 
-::: remeta.configuration
+::: remeta.configuration.Configuration

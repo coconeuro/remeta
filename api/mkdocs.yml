@@ -28,10 +28,16 @@ extra_javascript:
 extra:
   generator: false
 
+# Currently we need to force-import remeta.configuration via hooks.py, so that griffe correctly
+# renders the description fields in the dataclass. This seems like a bug.
+hooks:
+  - docs/hooks.py
+
 plugins:
   - search
   - autorefs
   - mkdocstrings:
+#      custom_templates: templates
       default_handler: python
       locale: en
       handlers:
@@ -41,22 +47,35 @@ plugins:
           options:
             docstring_style: google   # or numpy
             show_signature_annotations: true
+#            merge_init_into_class: true
             separate_signature: true
             show_docstring_parameters: true
+            show_docstring_attributes: true
             show_source: true
             relative_crossrefs: true
             show_bases: false
             show_root_toc_entry: false
-            members:
-              - classes
-              - functions
-#            inherited_members: true
+#            allow_inspection: true
+#            force_inspection: true
+#            members: false
+#            show_if_no_docstring: false   # key
+#            inherited_members: false
 #            show_root_heading: true
 #            show_root_full_path: false
+#            members:
+#              - classes
+#              - functions
+            extensions:
+              - griffe_fieldz:
+                  add_fields_to: docstring-parameters
+#                  add_fields_to: docstring-attributes
+#                  remove_fields_from_members: true
+#                  field_doc_key: doc
 
 nav:
   - → Guide ⮺: https://re-meta.github.io
-  - API:
-    - Plotting: plot.md
-    - Simulation: gendata.md
-    - Configuration: configuration.md
+  - API: index.md
+  - ReMeta: model.md
+  - Configuration: configuration.md  
+  - Simulation: simulation.md
+  - Plotting: plot.md

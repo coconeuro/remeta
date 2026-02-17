@@ -1,3 +1,9 @@
-# remeta.gendata
+# remeta.simulation
 
-::: remeta.gendata
+## simulate
+
+::: remeta.simulation.simulate
+
+## Simulation
+
+::: remeta.simulation.Simulation
