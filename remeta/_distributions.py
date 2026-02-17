@@ -4,7 +4,7 @@ from scipy.special import ndtr, gammainc as gammainc_spec, gamma as gamma_spec, 
 from scipy.integrate import quad
 
 
-def _params_lognorm_mode_std(mode, stddev):
+def _params_lognormal_mode_std(mode, stddev):
     """
     Compute scipy lognorm's shape and scale to presere mode and SD.
     The analytical formula is exact and was computed with WolframAlpha.
