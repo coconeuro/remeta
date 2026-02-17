@@ -21,7 +21,7 @@ jobs:
           # Otherwise ensure at least these:
           pip install -U pip
           pip install -e .
-          pip install mkdocs-material mkdocstrings[python] mkdocs-autorefs
+          pip install mkdocs-material mkdocstrings[python] mkdocs-autorefs griffe-fieldz
 
       - name: Build docs from api/mkdocs.yml
         run: |
