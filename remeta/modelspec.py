@@ -2,19 +2,26 @@ import warnings
 
 import numpy as np
 from scipy.optimize import OptimizeResult
+from numdifftools import Hessian
+from scipy.stats import norm
 
-from .util import TAB, SP2, Struct, ReprMixin, spearman2d, pearson2d, listlike, empty_list, print_class_instance
+from .util import (TAB, SP2, Struct, ReprMixin, create_struct_with_reprmixin, spearman2d, pearson2d, listlike,
+                   empty_list, print_class_instance, cov_from_hessian, se_from_cov, compute_criterion_bias, compute_cov_criteria)
 
 
 class Parameter(ReprMixin):
-    def __init__(self, guess=None, bounds=None, grid_range=None, group=None, prior=None):
+    def __init__(self, enable=None, guess=None, bounds=None, grid_range=None, group=None,
+                 prior=None, preset=None, default=None, model=None):
         """
         Class that defines the fitting characteristics of a Parameter.
 
         Parameters
         ----------
-        guess : None | float | np.floating
-            Initial guess for the parameter value.
+        enable : int
+            0 = disabled
+            integer > 0: enabled (typically 1, but can be 2 for type 1 parameters if fitted separately to both
+                         stimulus categories; in case of param_type2_criteria, the number sets the
+                         number of confidence criteria (=number of discrete confidence ratings minus 1).
         bounds: None | array-like of length 2
             Parameter bounds. The first and second element indicate the lower and upper bound of the parameter.
         grid_range: None | array-like (1d)
@@ -23,30 +30,53 @@ class Parameter(ReprMixin):
             None: no group-level estimate for the parameter
             'fixed': fit parameter as a group fixed effect (i.e., single value for the group)
             'random': fit parameter as a random effect (enforces shrinkage towards a group mean)
-       prior: None | tuple[float, float]
+        prior: None | tuple[float, float]
             None: no prior for the parameter
             (group_mean, group_sd): apply a Normal prior defined by mean and standard deviation
-
+        preset: None | float or array-like[[float]
+            Instead of fitting a parameter, set it to a fixed value. Note that this automatically disables the
+            parameter, i.e. parameter.enable will be set to 0.
+        default: None | float or array-like[float
+            This an internal attribute, that should typically not be touched. It specifies a default value
+            for a parameter that may be used if the parameter is not fitted.
+        model: None | str
+            For noise parameters, specifies an appropriate sampling distribution.
+            For other parameters, it may specify a function that is paramterized.
         """
+        self.enable = enable if preset is None else 0
         self.guess = guess
         self.bounds = bounds
         self.grid_range = np.linspace(bounds[0], bounds[1], 4) if grid_range is None else grid_range
         self.group = group
         self.prior = prior
-        self.default_changed = False
+        self.preset = preset
+        self.default = default
+        self.model = model
+        self._definition_changed = False
 
     def copy(self):
-        return Parameter(self.guess, self.bounds, self.grid_range, self.group, self.prior)
+        new = self.__class__.__new__(self.__class__)
+        new.__dict__ = {
+            k: v.copy() if isinstance(v, (dict, np.ndarray))
+            else v[:] if isinstance(v, list)
+            else v
+            for k, v in self.__dict__.items()
+        }
+        new._definition_changed = False
+        return new
+
+    def __copy__(self):
+        return self.copy()
 
     def __setattr__(self, name, value):
-        if name != "default_changed" and hasattr(self, name):
+        if name not in ('_definition_changed', 'enable', 'preset') and hasattr(self, name):
             old_value = getattr(self, name)
             if isinstance(old_value, np.ndarray) and isinstance(value, np.ndarray):
                 changed = not np.array_equal(old_value, value)
             else:
                 changed = old_value != value
             if changed:
-                super().__setattr__("default_changed", True)
+                super().__setattr__("_definition_changed", True)
 
         super().__setattr__(name, value)
 
@@ -128,7 +158,7 @@ class Data(ReprMixin):
         self._x_stim = None
         self._d_dec = None
         self._c_conf = None
-        if self.cfg.type2_fitting_type == 'criteria':
+        if self.cfg.param_type2_criteria.enable or self.cfg.param_type2_criteria.preset is not None:
             self.c_conf_discrete = None
 
         self.x_stim_max = None
@@ -151,9 +181,16 @@ class Data(ReprMixin):
         self.nsubjects = None
         self.nsamples = None
 
+        self.stats = create_struct_with_reprmixin('Stats')
+        self.stats_accuracy = None
+        self.stats_dprime = None
+        self.stats_choice_bias = None
+        self.stats_mean_confidence = None
+
         self.preproc_stim()
         self.preproc_dec()
-        self.preproc_conf()
+        if hasattr(confidence, '__len__') and confidence[0] is not None:
+            self.preproc_conf()
 
     @property
     def stimuli(self):
@@ -189,18 +226,26 @@ class Data(ReprMixin):
         self.nsubjects = len(self.x_stim)
         self.nsamples = np.array([len(v) for v in self.x_stim], int)
 
-        self.x_stim_min = min([np.abs(v).min() for v in self.x_stim])
-        self.x_stim_max = max([np.abs(v).max() for v in self.x_stim])
+        _xstim_abs = np.abs(self.x_stim)
+        self.x_stim_min = np.min(_xstim_abs)
+        self.x_stim_max = np.max(_xstim_abs)
+        # self.x_stim_min = min([np.abs(v).min() for v in self.x_stim])
+        # self.x_stim_max = max([np.abs(v).max() for v in self.x_stim])
+
+        if not self.cfg.normalize_stimuli_by_max and np.any(np.median(_xstim_abs, axis=1) > 2):
+            warnings.warn('For at least one subject, the median of stimulus intensities is > 2. ReMeta is optimized '
+                          'for stimuli that are roughly in the range [-1; 1]. ReMeta will ensure this automatically, '
+                          'if you set cfg.normalize_stimuli_by_max = True.')
 
         self.x_stim_3d, self.x_stim_category = [None] * self.nsubjects, [None] * self.nsubjects
         for s in range(self.nsubjects):
             # Normalize stimuli
             if self.cfg.normalize_stimuli_by_max:
                 self.x_stim[s] /= self.x_stim_max
-            else:
-                # self.x_stim = self.stimuli
-                if np.max(np.abs(self.x_stim[s])) > 1:
-                    raise ValueError('Stimuli are not normalized to the range [-1; 1].')
+            # else:
+            #     # self.x_stim = self.stimuli
+            #     if np.max(np.abs(self.x_stim[s])) > 1:
+            #         raise ValueError('Stimuli are not normalized to the range [-1; 1].')
             self.x_stim_3d[s] = self.x_stim[s][..., np.newaxis]
             self.x_stim_category[s] = (np.sign(self.x_stim[s]) == 1).astype(int)
 
@@ -209,6 +254,7 @@ class Data(ReprMixin):
         self.d_dec = self.ensure_list_of_arrays(self._choices if choices is None else choices)
 
         self.d_dec_sign, self.d_dec_3d, self.accuracy = [None] * self.nsubjects, [None] * self.nsubjects, [None] * self.nsubjects
+        self.stats_accuracy, self.stats_dprime, self.stats_choice_bias = empty_list(self.nsubjects), empty_list(self.nsubjects), empty_list(self.nsubjects)
         for s in range(self.nsubjects):
             # convert to 0/1 scheme if choices are provides as -1's and 1's
             if np.array_equal(np.unique(self.d_dec[s][~np.isnan(self.d_dec[s])]), [-1, 1]):
@@ -216,19 +262,34 @@ class Data(ReprMixin):
             self.d_dec_sign[s] = np.sign(self.d_dec[s] - 0.5)
             self.d_dec_3d[s] = self.d_dec[s][..., np.newaxis]
             self.accuracy[s] = (self.x_stim_category[s] == self.d_dec[s]).astype(int)
+            self.stats_accuracy[s] = np.mean(self.accuracy[s]),
+            self.stats_dprime[s] = norm.ppf(min(1 - 1e-3, max(1e-3, self.d_dec[s][self.x_stim_category[s] == 1].mean()))) - \
+                                   norm.ppf(min(1 - 1e-3, max(1e-3, self.d_dec[s][self.x_stim_category[s] == 0].mean().mean()))),
+            self.stats_choice_bias[s] = self.d_dec[s].mean() - self.x_stim_category[s].mean()
+        self.stats.accuracy = np.nanmean(self.stats_accuracy)
+        self.stats.dprime = np.nanmean(self.stats_dprime)
+        self.stats.choice_bias = np.nanmean(self.stats_choice_bias)
 
     def preproc_conf(self, confidence=None):
 
-        if self._confidence is not None or confidence is not None:
+        if not self.cfg.skip_type2 and self._confidence is not None or confidence is not None:
             self.c_conf = self.ensure_list_of_arrays(self._confidence if confidence is None else confidence)
             if self.c_conf is not None:
                 self.nsubjects = len(self.c_conf)
                 self.nsamples = np.array([len(v) for v in self.c_conf], int)
-                self.c_conf_discrete, self.c_conf_3d = [None] * self.nsubjects, [None] * self.nsubjects
+                self.c_conf_3d = [None] * self.nsubjects
+                self.stats_mean_confidence = empty_list(self.nsubjects)
                 for s in range(self.nsubjects):
-                    if self.cfg.type2_fitting_type == 'criteria':
-                        self.c_conf_discrete[s] = np.digitize(self.c_conf[s], np.arange(1/self.cfg.n_discrete_confidence_levels, 1, 1/self.cfg.n_discrete_confidence_levels))
                     self.c_conf_3d[s] = self.c_conf[s][..., np.newaxis]
+                    self.stats_mean_confidence[s] = self.c_conf[s].mean()
+                self.stats.mean_confidence = np.nanmean(self.stats_mean_confidence)
+                if self.cfg.param_type2_criteria.enable or self.cfg.param_type2_criteria.preset is not None:
+                    self.c_conf_discrete = [None] * self.nsubjects
+                    for s in range(self.nsubjects):
+                        self.c_conf_discrete[s] = np.digitize(
+                            self.c_conf[s],
+                            np.arange(1/self.cfg._n_conf_levels, 1-1e-10, 1/self.cfg._n_conf_levels)
+                        )
 
 
 
@@ -237,50 +298,77 @@ class ModelResult():
     def __init__(self, level):
         self.level = level
 
-    def store(self, cfg, data, params, fun, args, stage, pop_mean_sd=None, fit=None):
-        self.nparams = cfg.paramset_type1.nparams
+    def store(self, stage, cfg, data, fun, params, params_se=None, params_cov=None, hessian=None,
+              pop_mean_sd=None, execution_time=None, fit=None):
+        self.nparams = cfg._paramset_type1.nparams
         self.nsubjects = data.nsubjects
         self.nsamples = data.nsamples
-        self.negll = np.empty(self.nsubjects)
-        self.negll_per_sample = np.empty(self.nsubjects)
+        self.loglik = np.empty(self.nsubjects)
+        self.loglik_per_sample = np.empty(self.nsubjects)
         self.aic = np.empty(self.nsubjects)
         self.aic_per_sample = np.empty(self.nsubjects)
         self.bic = np.empty(self.nsubjects)
         self.bic_per_sample = np.empty(self.nsubjects)
         self.params = empty_list(self.nsubjects, None)
         self.params_extra = empty_list(self.nsubjects, None)
+        self.params_se = empty_list(self.nsubjects, None)
         self.params_random_effect = None
+        self.d = None
+        self.execution_time = execution_time
         for s in range(self.nsubjects):
-            fun(params[s], s, *args, save_target=self.level)
-            self.negll_per_sample[s] = self.negll[s] / self.nsamples[s]
-            self.aic[s] = 2 * self.nparams + 2 * self.negll[s]
+            fun(params[s], s, save_type=self.level)
+            self.loglik_per_sample[s] = self.loglik[s] / self.nsamples[s]
+            self.aic[s] = 2 * self.nparams - 2 * self.loglik[s]
             self.aic_per_sample[s] = self.aic[s] / self.nsamples[s]
-            self.bic[s] = 2 * np.log(self.nsamples[s]) + 2 * self.negll[s]
+            self.bic[s] = 2 * np.log(self.nsamples[s]) - 2 * self.loglik[s]
             self.bic_per_sample[s] = self.bic[s] / self.nsamples[s]
+
+            # For subject-level fits, the Hessian will have been passed, for group-level random/fixed effects
+            # the standard error (and the covariance in case of random effects).
+            cov, se_params = None, None
+            if (self.level == 'subject') and hessian is not None:
+                cov = cov_from_hessian(hessian[s])
+                se_params = se_from_cov(cov)
+            elif (self.level == 'group') and params_se is not None:
+                se_params = params_se[s]
+                if params_cov is not None:
+                    cov = params_cov[s]
+
+            if (stage == 'type2') and ('type2_criteria' in self.params[s]) and cov is not None:
+                cov_crit = compute_cov_criteria(cov, cfg._paramset_type2.param_ind['type2_criteria'])
+                se_params[cfg._paramset_type2.param_ind['type2_criteria']] = se_from_cov(cov_crit)
+                self.params_extra[s] = self._compute_parameters_extra(self.params[s], cov_crit)
+
+            if se_params is not None:
+                self.params_se[s] = {p: se_params[ind] for p, ind in getattr(cfg, f'_paramset_{stage}').param_ind.items()}
+
             if stage == 'type1':
                 self.params_extra[s] = {f'{k}_unnorm': list(np.array(v) * data.x_stim_max) if listlike(v) else
                                             v * data.x_stim_max for k, v in self.params[s].items()}
-            elif 'type2_criteria' in cfg.paramset_type2.param_names:
-                self.params_extra[s] = self._compute_parameters_extra(self.params[s])
+
 
         if pop_mean_sd is not None:
             self.params_random_effect = Struct()
             self.params_random_effect.mean = {k: p if hasattr(p:=pop_mean_sd[0][ind], '__len__') and len(p) > 1 else
-                float(np.squeeze(p)) for k, ind in getattr(cfg, f'paramset_{stage}').param_revind_re.items()}
+                float(np.squeeze(p)) for k, ind in getattr(cfg, f'_paramset_{stage}').param_revind_re.items()}
             self.params_random_effect.std = {k: p if hasattr(p:=pop_mean_sd[1][ind], '__len__') and len(p) > 1 else
-                float(np.squeeze(p)) for k, ind in getattr(cfg, f'paramset_{stage}').param_revind_re.items()}
+                float(np.squeeze(p)) for k, ind in getattr(cfg, f'_paramset_{stage}').param_revind_re.items()}
 
         if fit is not None:
             self.fit = fit
 
-    def _compute_parameters_extra(self, params):
+    def _compute_parameters_extra(self, params, cov_crit):
+
+        bias_crit, bias_crit_se = compute_criterion_bias(params['type2_criteria'], cov_crit)
+
         params_extra = dict()
-        params_extra['type2_criteria_absolute'] = \
-            [np.sum(params['type2_criteria'][:i+1]) for i in range(len(params['type2_criteria']))]
-        params_extra['type2_criteria_bias'] = \
-            np.mean(params['type2_criteria'])*(len(params['type2_criteria'])+1)-1
-        for i in range(len(params['type2_criteria'])):
-            params_extra[f'type2_criteria_absolute_{i}'] = params_extra[f'type2_criteria_absolute'][i]
+        params_extra['type2_criteria_bias'] = bias_crit
+        params_extra['type2_criteria_bias_sem'] = bias_crit_se
+        params_extra['type2_criteria_confidence_bias'] = -params_extra['type2_criteria_bias']
+        params_extra['type2_criteria_confidence_bias_sem'] = bias_crit_se
+        # params_extra['type2_criteria_absdev'] = np.abs(diff).mean()
+        # params_extra['type2_criteria_bias'] = \
+        #     np.mean(params['type2_criteria'])*(len(params['type2_criteria'])+1)-1
         for i in range(len(params['type2_criteria'])):
             params_extra[f'type2_criteria_{i}'] = params[f'type2_criteria'][i]
         return params_extra
@@ -302,30 +390,35 @@ class ModelResultContainer():
         self.nparams = None
         self.nsubjects = None
         self.nsamples = None
-        self.negll = None
+        self.loglik = None
 
     def init_group(self):
         self.group = ModelResult(level='group')
 
-    def store(self, cfg, data, fun, args):
-        self.nparams = cfg.paramset_type1.nparams
+    def store(self, cfg, data, fun):
+        self.nparams = cfg._paramset_type1.nparams
         self.nsubjects = data.nsubjects
         self.nsamples = data.nsamples
 
-        result_vars = ['params', 'params_extra', 'params_random_effect', 'negll', 'negll_per_sample', 'aic', 'aic_per_sample', 'bic', 'bic_per_sample']
+        result_vars = ['params', 'params_se', 'params_extra', 'params_random_effect', 'execution_time', 'loglik', 'loglik_per_sample', 'aic', 'aic_per_sample', 'bic', 'bic_per_sample']
         final_level = self.subject if self.group is None else self.group
         for var in result_vars:
             setattr(self, var, getattr(final_level, var))
 
         if cfg.true_params is not None:
-            paramset = cfg.paramset_type1 if self.stage == 'type1' else cfg.paramset_type2
+            paramset = cfg._paramset_type1 if self.stage == 'type1' else cfg._paramset_type2
             if not np.all([p in cfg.true_params for p in paramset.param_names]):
                 raise ValueError(f'Set of provided true parameters is incomplete (Stage {self.stage}).')
-            self.negll_true = np.empty(data.nsubjects)
+            self.loglik_true = np.empty(data.nsubjects)
+            self.loglik_per_sample_true = np.empty(data.nsubjects)
             for s in range(data.nsubjects):
                 tp = cfg.true_params.copy() if isinstance(cfg.true_params, dict) else cfg.true_params[s].copy()
-                params_true = sum([tp[k] if listlike(tp[k]) else [tp[k]] for k in tp if k in paramset.param_names], [])
-                self.negll_true[s] = fun(params_true, s, *args)
+                if (self.stage == 'type2') and 'type2_criteria' in tp:
+                    # convert to criteria gap logic
+                    tp['type2_criteria'] = np.diff(np.hstack((0, tp['type2_criteria'])))
+                params_true = np.array(sum([list(tp[k]) if listlike(tp[k]) else [tp[k]] for k in tp if k in paramset.param_names], []))
+                self.loglik_true[s] = -fun(params_true, s, save_type='mock')
+                self.loglik_per_sample_true[s] = self.loglik_true[s] / self.nsamples[s]
 
     def _format_level(self, level, params):
         param = params[0] if isinstance(params, list) else params
@@ -348,40 +441,33 @@ class ModelResultContainer():
 
         indent = f'{TAB}' if self.nsubjects == 1 else f'{TAB}{TAB}'
 
-        def _print_parameters(params, negll, true_params, params_extra=None, level=None):
-            parameters = cfg.paramset_type1.parameters if self.stage == 'type1' else cfg.paramset_type2.parameters
+        def _print_parameters(params, params_se, loglik, loglik_per_sample, true_params, params_extra=None, level=None):
+            parameters = cfg._paramset_type1.parameters if self.stage == 'type1' else cfg._paramset_type2.parameters
             for k, v in params.items():
                 level_fmt = self._format_level(level, parameters[k][0] if isinstance(parameters[k], list) else parameters[k])
-                if k == 'type2_criteria':
-                    for i in range(cfg.n_discrete_confidence_levels-1):
-                        true_param_crit = None if true_params is None or k not in true_params else true_params[k][i]
-                        true_string = '' if true_param_crit is None else f' (true: {true_param_crit:.3g})'
-                        if i > 0:
-                            criterion = np.sum(params[k][:i+1])
-                            true_string_gap = '' if true_param_crit is None else f' (true: {np.sum(true_params[k][:i+1]):.3g})'
-                            gap_string = f' = gap | criterion = {criterion:.3g}{true_string_gap}'
-                        else:
-                            gap_string = ''
-                        print(f'{indent}{TAB}[{level_fmt}] {k}_{i}: {v[i]:.3g}{true_string}{gap_string}')
-                else:
-                    true_string = '' if true_params is None or k not in true_params else \
-                        (f" (true: [{', '.join([f'{p:.3g}' for p in true_params[k]])}])" if  # noqa
-                         listlike(true_params[k]) else f' (true: {true_params[k]:.3g})')  # noqa
-                    value_string = f"[{', '.join([f'{p:.3g}' for p in v])}]" if listlike(v) else f'{v:.3g}'
-                    print(f'{indent}{TAB}[{level_fmt}] {k}: {value_string}{true_string}')
+                true_string = '' if true_params is None or k not in true_params else \
+                    (f" (true: [{', '.join([f'{p:.3f}' for p in true_params[k]])}])" if  # noqa
+                     listlike(true_params[k]) else f' (true: {true_params[k]:.3f})')  # noqa
+                se = params_se[k]
+                value_string = f"[{', '.join([f'{p:.3f} ± {er:.3f}' for p, er in zip(v, se)])}]" if listlike(v) else f'{v:.3f} ± {se:.3f}'
+                print(f'{indent}{TAB}[{level_fmt}] {k}: {value_string}{true_string}')
 
             if params_extra is not None:
                 for p, v in params_extra.items():
-                    if not p.split('_')[-1].isdigit():
-                        value_string =  f"[{', '.join([f'{p:.3g}' for p in v])}]" if listlike(v) else f'{v:.3g}'
+                    if not p.split('_')[-1].isdigit() and not p.endswith('_sem'):
+                        if f'{p}_sem' in params_extra:
+                            se = params_extra[f'{p}_sem']
+                            value_string =  f"[{', '.join([f'{p:.3f} ± {er:.3f}' for p, er in zip(v, se)])}]" if listlike(v) else f'{v:.3f} ± {se:.3f}'
+                        else:
+                            value_string =  f"[{', '.join([f'{p:.3f}' for p in v])}]" if listlike(v) else f'{v:.3f}'
                         if true_params is None:
                             true_string = ''
                         else:
                             v_ = true_params[p]
-                            true_string = f" (true: [{', '.join([f'{p:.3g}' for p in v_])}])" if listlike(v_) else f' (true: {v_:.3g})'
+                            true_string = f" (true: [{', '.join([f'{p:.3f}' for p in v_])}])" if listlike(v_) else f' (true: {v_:.3f})'
                         print(f'{indent}{TAB}{TAB}[extra] {p}: {value_string}{true_string}')
 
-            print(f'{indent}[{"final" if level is None else "subject"}] Neg. LL: {negll:.2f}')
+            print(f'{indent}[{"final" if level is None else "subject"}] Log-likelihood: {loglik:.2f} (per sample: {loglik_per_sample:.4g})')
 
         print(f'{SP2}Final report')
         for s in range(self.nsubjects):
@@ -389,7 +475,8 @@ class ModelResultContainer():
                 print(f'{TAB}Subject {s + 1} / {self.nsubjects}')
             print(f'{indent}Parameters estimates (subject-level fit)')
             _print_parameters(
-                self.subject.params[s], self.subject.negll[s],
+                self.subject.params[s], self.subject.params_se[s],
+                self.subject.loglik[s], self.subject.loglik_per_sample[s],
                 cfg.true_params[s] if isinstance(cfg.true_params, list) else cfg.true_params,
                 None if self.stage == 'type1' else self.params_extra[s],
                 level='subject'
@@ -399,12 +486,13 @@ class ModelResultContainer():
             if self.group is not None:
                 print(f'{indent}Parameters estimates (group-level fit)')
                 _print_parameters(
-                    self.group.params[s], self.group.negll[s],
+                    self.group.params[s], self.group.params_se[s],
+                    self.group.loglik[s], self.group.loglik_per_sample[s],
                     cfg.true_params[s] if isinstance(cfg.true_params, list) else cfg.true_params,
                     None if self.stage == 'type1' else self.params_extra[s]
                 )
-            if cfg.true_params is not None and hasattr(self, 'negll_true'):
-                print(f'{indent}Neg. LL using true params: {self.negll_true[s]:.2f}')
+            if cfg.true_params is not None and hasattr(self, 'loglik_true'):
+                print(f'{indent}Log-likelihood using true params: {self.loglik_true[s]:.2f} (per sample: {self.loglik_per_sample_true[s]:.4g})')
 
     def __str__(self):
         txt = print_class_instance(self, attr_class_only=('subject', 'group'))
@@ -421,34 +509,62 @@ class Summary(ReprMixin):
 
         self.nsubjects = data.nsubjects
         self.nsamples = data.nsamples
-        self.nparams = cfg.paramset_type1.nparams + (0 if cfg.skip_type2 else cfg.paramset_type2.nparams)
+        self.nparams = cfg._paramset_type1.nparams + (0 if cfg.skip_type2 else cfg._paramset_type2.nparams)
 
         self.type1 = ModelResultContainer(stage='type1')
         self.type2 = ModelResultContainer(stage='type2')
+        self.subject = ModelResult(level='subject')
+        self.group = ModelResult(level='group')
 
-    def store(self, cfg):
-        if cfg.skip_type2:
-            result_vars = ['params', 'params_extra', 'params_random_effect', 'negll', 'negll_per_sample', 'aic', 'aic_per_sample', 'bic', 'bic_per_sample']
+        self.stats = data.stats
+
+
+    def store_combined_type1_type2(self, type1_source, type2_source, target):
+        setattr(target, 'params', [{**type1_source.params[s], **type2_source.params[s]} for s in range(self.nsubjects)])
+        setattr(target, 'params_se', [{**type1_source.params_se[s], **type2_source.params_se[s]} for s in range(self.nsubjects)])
+        setattr(target, 'params_extra', [
+            {**type1_source.params_extra[s], **({} if type2_source.params_extra[s] is None else type2_source.params_extra[s])}
+            for s in range(self.nsubjects)]
+                )
+        if type1_source.params_random_effect is not None or type2_source.params_random_effect is not None:
+            setattr(target, 'params_random_effect', Struct())
+            getattr(target, 'params_random_effect').mean = \
+                {**({} if type1_source.params_random_effect is None else type1_source.params_random_effect.mean),
+                 **({} if type2_source.params_random_effect is None else type2_source.params_random_effect.mean)}
+            getattr(target, 'params_random_effect').std = \
+                {**({} if type1_source.params_random_effect is None else type1_source.params_random_effect.std),
+                 **({} if type2_source.params_random_effect is None else type2_source.params_random_effect.std)}
+        else:
+            setattr(target, 'params_random_effect', None)
+        # result_vars = ['loglik', 'loglik_per_sample', 'aic', 'aic_per_sample', 'bic', 'bic_per_sample']
+        # for var in result_vars:
+        #     setattr(target, var, getattr(type1_source, var) + getattr(type2_source, var))
+
+    def shallow_result_copy(self, source, exclude=None):
+        if exclude is None:
+            exclude = ['loglik', 'loglik_per_sample', 'aic', 'aic_per_sample', 'bic', 'bic_per_sample', 'execution_time']
+        source_copy = type(source).__new__(type(source))
+        source_copy.__dict__.update({k: v for k, v in source.__dict__.items() if k not in exclude})
+        return source_copy
+
+    def store(self, store_type1_only=False):
+        if store_type1_only:
+            result_vars = ['params', 'params_se', 'params_extra', 'params_random_effect', 'execution_time', 'loglik', 'loglik_per_sample', 'aic', 'aic_per_sample', 'bic', 'bic_per_sample']
             for var in result_vars:
                 setattr(self, var, getattr(self.type1, var))
+            self.subject = self.type1.subject
+            self.group = self.type1.group
         else:
-            self.params = [{**self.type1.params[s], **self.type2.params[s]} for s in range(self.nsubjects)]
-            self.params_extra = [
-                {**self.type1.params_extra[s], **({} if self.type2.params_extra[s] is None else self.type2.params_extra[s])}
-                for s in range(self.nsubjects)]
-            if self.type1.params_random_effect is not None or self.type2.params_random_effect is not None:
-                self.params_random_effect = Struct()
-                self.params_random_effect.mean = \
-                    {**({} if self.type1.params_random_effect is None else self.type1.params_random_effect.mean),
-                     **({} if self.type2.params_random_effect is None else self.type2.params_random_effect.mean)}
-                self.params_random_effect.std = \
-                    {**({} if self.type1.params_random_effect is None else self.type1.params_random_effect.std),
-                     **({} if self.type2.params_random_effect is None else self.type2.params_random_effect.std)}
-            else:
-                self.params_random_effect = None
-            result_vars = ['negll', 'negll_per_sample', 'aic', 'aic_per_sample', 'bic', 'bic_per_sample']
-            for var in result_vars:
-                setattr(self, var, getattr(self.type1, var) + getattr(self.type2, var))
+            self.store_combined_type1_type2(self.type1, self.type2, self, )
+            self.store_combined_type1_type2(self.type1.subject, self.type2.subject, self.subject, )
+            if self.type1.group is not None and self.type2.group is None:
+                # self.group = self.type1.group
+                self.group = self.shallow_result_copy(self.type1.group)
+            elif self.type2.group is not None and self.type1.group is None:
+                # self.group = self.type2.group
+                self.group = self.shallow_result_copy(self.type2.group)
+            elif self.type1.group is not None and self.type2.group is not None:
+                self.store_combined_type1_type2(self.type1.group, self.type2.group, self.group)
 
     def summary(self, c_conf_empirical=None, c_conf_generative=None, squeeze=True):
 
