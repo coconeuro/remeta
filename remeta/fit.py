@@ -690,7 +690,8 @@ def group_estimation(fun, nsubjects, params_init, bounds, idx_fe, idx_re,
         # keep your existing behavior in RE case (free-free only)
         cov_arr = np.stack(cov_theta_free, axis=0)  # (N,d_free,d_free)
         cov_arr = 0.5 * (cov_arr + np.swapaxes(cov_arr, 1, 2))
-        result.x_cov[:, *np.ix_(idx_free, idx_free)] = cov_arr
+        # result.x_cov[:, *np.ix_(idx_free, idx_free)] = cov_arr  # does not work in Python 3.10
+        result.x_cov[(slice(None),) + np.ix_(idx_free, idx_free)] = cov_arr
     else:
         # FE-only: compute full KxK per subject (includes FE blocks + cross)
         if num_cores > 1:
