@@ -17,11 +17,11 @@ VERSION = '1.0.0'
 LICENCE = 'MIT License'
 
 INSTALL_REQUIRES = [
-    'numpy>=1.18.1',
+    'numpy>=1.20',
     'scipy>=1.3',
     'multiprocessing_on_dill>=3.5.0a4',
-    'matplotlib>=3.1.3',
-]
+    'matplotlib>=3.6.0',
+    'numdifftools>=0.9.38']
 
 PACKAGES = ['remeta']
 
