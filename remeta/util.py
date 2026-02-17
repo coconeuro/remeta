@@ -3,6 +3,7 @@ import warnings
 
 import numpy as np
 from scipy.stats import rankdata
+from scipy.linalg import cho_factor, cho_solve
 from copy import deepcopy
 from dataclasses import fields, MISSING
 
@@ -14,7 +15,6 @@ _slsqp_epsilon = np.sqrt(np.finfo(float).eps)  # scipy's default value for the S
 
 
 class Struct:
-
     def __str__(self):
         return self.__repr__()
 
@@ -28,6 +28,10 @@ class ReprMixin:
 
     def __repr__(self):
         return f'{self.__class__.__name__}\n' + '\n'.join([f'\t{k}: {v}' for k, v in self.__dict__.items()])
+
+
+def create_struct_with_reprmixin(class_name):
+    return type(class_name, (ReprMixin,), {})()
 
 
 def print_class_instance(instance, attr_class_only=(), attr_replace_string=None):
@@ -157,6 +161,27 @@ def empty_list(n, *shapes_or_None):
     else:
         return [np.empty([shape[i] if listlike(shape) else shape for shape in shapes_or_None]) for i in range(n)]
 
+
+def fmp(v, k=3):
+    # 1. Format to exactly k decimal places
+    s = f"{v:.{k}f}"
+
+    # 2. If it ends in k zeros (e.g. .000 for k=3), strip it all (for cases like 1.000 -> 1)
+    if s.endswith('.' + '0'*k):
+        return s[:-(k+1)]
+
+    # 1.110 -> 1.11
+    orig_str = str(v)
+    if '.' in orig_str:
+        decimal_places = len(orig_str.split('.')[1])
+        # If original has <k decimals, keep it as is.
+        # If original has k+ decimals, truncate to k.
+        precision = min(decimal_places, k)
+        return f"{v:.{precision}f}"
+
+    return str(int(v))
+
+
 def _check_param(x):
     if hasattr(x, '__len__'):
         if len(x) == 2:
@@ -207,10 +232,57 @@ def spearman2d(x, y, axis=-1):
     return r
 
 
+def cov_from_hessian(H, symmetrize=True):
+    Hs = 0.5 * (H + H.T) + 1e-12 * np.eye(len(H)) if symmetrize else H + 1e-12 * np.eye(len(H))
+    c, lower = cho_factor(Hs, lower=True, check_finite=False)  # raises LinAlgError if not SPD
+    cov = cho_solve((c, lower), np.eye(Hs.shape[0]), check_finite=False)
+    # numerical cleanup: enforce symmetry
+    cov = 0.5 * (cov + cov.T)
+    return cov
+
+
+def se_from_cov(cov):
+    var = np.diag(cov)
+    se = np.sqrt(var)
+    return se
+
+
+def compute_cov_criteria(cov_full, idx_crit):
+    cov_gaps = cov_full[np.ix_(idx_crit, idx_crit)]
+    J = np.tril(np.ones((len(idx_crit), len(idx_crit))))
+    cov_crit = J @ cov_gaps @ J.T
+    return cov_crit
+
+
+def compute_criterion_bias(criteria, cov_crit):
+    """Idea: compute criterion bias as a weighted sum of differences from Bayes-optiomal criteria.
+       The weights are the uncertainty estimates (SEs) of the criteria; we slightly improve on this
+       by also considering the correlation structure between criterion uncertainties, i.e. the full covariance
+       matrix.
+    """
+
+    k = len(criteria) + 1
+    crit_bayes = np.arange(1/k, 1-1e-10, 1/k)
+    diff = criteria - crit_bayes
+    one = np.ones_like(criteria)
+
+    c, lower = cho_factor(cov_crit)
+    # numer = (multivariate) weighted sum of criterion differences
+    numer = one @ cho_solve((c, lower), diff)
+    # denom = (multivariate) sum of all weights
+    denom = one @ cho_solve((c, lower), one)
+    bias_crit = numer / denom
+    bias_crit_se = np.sqrt(1 / denom)
+
+    return bias_crit, bias_crit_se
+
+
 def print_warnings(w):
+    if len(w):
+        print('\tWarnings that occured during model estimation:')
     for el in set([w_.message.args[0] for w_ in w]):
         if 'delta_grad == 0.0' not in el:
-            print('\tWarning: ' + el)
+            print('\t\tWarning: ' + el)
 
 
 def raise_warning_in_catch_block(msg, category, w):
@@ -261,26 +333,32 @@ def print_dataset_characteristics(sim):
     print('----------------------------------')
     if sim.cfg.skip_type2:
         print('..Generative parameters:')
+        print(f'{TAB}Type 1 noise distribution: {sim.cfg.param_type1_noise.model}')
         for p, v in sim.params_type1.items():
             print(f'{TAB}{p}: {np.array2string(np.array(v), precision=3)}')
     else:
         print('..Generative model:')
+        print(f'{TAB}Type 1 noise distribution: {sim.cfg.param_type1_noise.model}')
         print(f'{TAB}Type 2 noise type: {sim.cfg.type2_noise_type}')
-        print(f'{TAB}Type 2 noise distribution: {sim.cfg.type2_noise_dist}')
+        print(f'{TAB}Type 2 noise distribution: {sim.cfg.param_type2_noise.model}')
         print('..Generative parameters:')
         for p, v in sim.params.items():
             print(f'{TAB}{p}: {np.array2string(np.array(v), precision=3)}')
         if sim.params_extra is not None:
-            if 'type2_criteria_absolute' in sim.params_extra:
-                print(f"{TAB}Type 2 criteria (absolute): [{', '.join([f'{c:.5g}' for c in sim.params_extra['type2_criteria_absolute']])}]")
             if 'type2_criteria_bias' in sim.params_extra:
-                print(f"{TAB}Criterion bias: {sim.params_extra['type2_criteria_bias']:.5g}")
+                print(f"{TAB}{TAB}[extra] Criterion bias: {sim.params_extra['type2_criteria_bias']:.4f}")
+            if 'type2_criteria_confidence_bias' in sim.params_extra:
+                print(f"{TAB}{TAB}[extra] Criterion-based confidence bias: {sim.params_extra['type2_criteria_confidence_bias']:.4f}")
+            # if 'type2_criteria_absdev' in sim.params_extra:
+            #     print(f"{TAB}{TAB}[extra] Criterion absolute deviation: {sim.params_extra['type2_criteria_absdev']:.4f}")
     print('..Descriptive statistics:')
     print(f'{TAB}No. subjects: {sim.nsubjects}')
-    print(f'{TAB}No. samples: {sim.nsamples}')
+    print(f"{TAB}No. samples: {np.array2string(np.array(sim.nsamples).squeeze(), separator=', ', threshold=3)}")
     if sim.type1_stats is not None:
-        print(f"{TAB}Performance: {100 * sim.type1_stats['accuracy']:.1f}% correct")
-        print(f"{TAB}Choice bias: {('-', '+')[int(sim.type1_stats['choice_bias'] > 0.5)]}{100*np.abs(sim.type1_stats['choice_bias'] - 0.5):.1f}%")
+        print(f"{TAB}Accuracy: {100 * sim.type1_stats['accuracy']:.1f}% correct")
+        print(f"{TAB}d': {sim.type1_stats['dprime']:.1f}")
+        # print(f"{TAB}Choice bias: {('-', '+')[int(sim.type1_stats['choice_bias'] > 0.5)]}{100*np.abs(sim.type1_stats['choice_bias'] - 0.5):.1f}%")
+        print(f"{TAB}Choice bias: {100*sim.type1_stats['choice_bias']:.1f}%")
     if not sim.cfg.skip_type2 and sim.type2_stats is not None:
         print(f"{TAB}Confidence: {sim.type2_stats['confidence']:.2f}")
         print(f"{TAB}M-Ratio: {sim.type2_stats['mratio']:.2f}")
