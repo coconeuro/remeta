@@ -149,7 +149,7 @@ def simulate(
             if cfg.param_type2_criteria.enable:
                 if not np.all(np.diff(params['type2_criteria']) > 0) or (min(params['type2_criteria']) < 0) or (max(params['type2_criteria']) > 1):
                     raise ValueError('Type 2 criteria must be provided in an ascending manner and be between 0 and 1.\n'
-                                     f'Provided criteria: {np.array2string(np.array(params['type2_criteria']), precision=3)}')
+                                     f"Provided criteria: {np.array2string(np.array(params['type2_criteria']), precision=3)}")
 
                 # convert to criterion gaps
                 # old_criteria = np.array(params['type2_criteria']).copy()
