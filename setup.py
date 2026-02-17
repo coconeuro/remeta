@@ -13,7 +13,7 @@ DESCRIPTION = (
 DISTNAME = 'remeta'
 MAINTAINER = 'Matthias Guggenmos'
 MAINTAINER_EMAIL = 'mg.corresponding@gmail.com'
-VERSION = '0.99'
+VERSION = '0.99.1'
 LICENCE = 'MIT License'
 
 INSTALL_REQUIRES = [
