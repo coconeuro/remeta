@@ -1,33 +1,31 @@
-import warnings
-
 import numpy as np
-from scipy.special import expit
+from scipy.special import expit, ndtr, ndtri
 
-from .util import maxfloat
-from .util import _check_param
+from .util import _check_param, listlike
 
 
-def check_criteria_sum(criteria):
-    """
-    Ensure that criteria sum up to at most 1
-
-    Parameters
-    ----------
-    criteria : array-like of dtype float
-        Confidence criteria (typically provided as a list)
-
-    Returns
-    ----------
-    criteria : array-like of dtype float
-        Transformed confidence criteria
-    """
-    ind1 = np.where(np.cumsum(criteria) > 1)[0]
-    if len(ind1):
-        for i in ind1[1:]:
-            criteria[i] = 0
-        criteria[ind1[0]] = 1 - np.sum(criteria[:ind1[0]]) + 1e-8
-        # Note: we add 1e-8 to avoid edge cases due to floating point precision
-    return criteria
+# def check_criteria(criteria):
+#     """
+#     Ensure that criteria do not exceed 1
+#
+#     Parameters
+#     ----------
+#     criteria : array-like of dtype float
+#         Confidence criteria (typically provided as a list)
+#
+#     Returns
+#     ----------
+#     criteria : array-like of dtype float
+#         Transformed confidence criteria
+#     """
+#     ind1 = np.where(np.array(criteria) > 1)[0]
+#     if len(ind1):
+#         raise ValueError
+#         for i in ind1[1:]:
+#             criteria[i] = 0
+#         criteria[ind1[0]] = 1 - np.sum(criteria[:ind1[0]]) + 1e-8
+#         # Note: we add 1e-8 to avoid edge cases due to floating point precision
+#     return criteria
 
 
 def logistic(x, type1_noise, squeeze=False):
@@ -78,23 +76,23 @@ def logistic_inv(posterior, type1_noise):
     return x
 
 
-def compute_nonlinear_encoding(x_stim, type1_nonlinear_encoding_gain=None, type1_nonlinear_encoding_transition=None):
+def compute_nonlinear_encoding(x_stim, type1_nonlinear_gain=None, type1_nonlinear_scale=None):
 
-    gain = _check_param(0 if type1_nonlinear_encoding_gain is None else type1_nonlinear_encoding_gain)
-    transition = _check_param(1 if type1_nonlinear_encoding_transition is None else type1_nonlinear_encoding_transition)
+    gain = _check_param(0 if type1_nonlinear_gain is None else type1_nonlinear_gain)
+    scale = _check_param(1 if type1_nonlinear_scale is None else type1_nonlinear_scale)
 
     neg, pos = x_stim < 0, x_stim >= 0
     x_stim_nonlinear = np.empty_like(x_stim)
-    x_stim_nonlinear[neg] = x_stim[neg] * (1 + gain[0] * (x_stim[neg] / transition[0])**2 /
-                                           (1 + (x_stim[neg] / transition[0])**2))
-    x_stim_nonlinear[pos] = x_stim[pos] * (1 + gain[1] * (x_stim[pos] / transition[1])**2 /
-                                           (1 + (x_stim[pos] / transition[1])**2))
+    x_stim_nonlinear[neg] = x_stim[neg] * (1 + gain[0] * (x_stim[neg] / scale[0])**2 /
+                                           (1 + (x_stim[neg] / scale[0])**2))
+    x_stim_nonlinear[pos] = x_stim[pos] * (1 + gain[1] * (x_stim[pos] / scale[1])**2 /
+                                           (1 + (x_stim[pos] / scale[1])**2))
 
     return x_stim_nonlinear
 
 
 def compute_signal_dependent_type1_noise(x_stim, type1_noise=None, type1_thresh=None, type1_noise_heteroscedastic=None,
-                                         type1_noise_signal_dependency='none', **kwargs):  # noqa
+                                         type1_noise_signal_dependency=None, **kwargs):  # noqa
     """
     Compute signal-dependent type 1 noise.
 
@@ -109,8 +107,8 @@ def compute_signal_dependent_type1_noise(x_stim, type1_noise=None, type1_thresh=
         Type 1 threshold.
     type1_noise_heteroscedastic : float or array-like
         Signal-dependent type 1 noise parameter.
-    type1_noise_signal_dependency : str
-        Define the signal dependency of type 1 noise. One of 'none', 'multiplicative', 'power', 'exponential', 'logarithm'.
+    type1_noise_signal_dependency : None | str
+        Define the signal dependency of type 1 noise. One of None, 'multiplicative', 'power', 'exponential', 'logarithm'.
     kwargs : dict
         Convenience parameter to avoid an error if irrelevant parameters are passed.
 
@@ -125,10 +123,11 @@ def compute_signal_dependent_type1_noise(x_stim, type1_noise=None, type1_thresh=
     type1_thresh_ = (0, 0) if type1_thresh is None else _check_param(type1_thresh)
     type1_noise_heteroscedastic = np.ones(x_stim.shape)
     neg, pos = x_stim < 0, x_stim >= 0
-    if type1_noise_signal_dependency == 'none':
+    if type1_noise_signal_dependency is None:
         type1_noise_heteroscedastic[neg] *= type1_noise_[0]
         type1_noise_heteroscedastic[pos] *= type1_noise_[1]
     elif type1_noise_signal_dependency == 'multiplicative':
+        # Weber's law with a noise floor (type1_noise) and a noise scaling parameter (type1_heteroscedastic_)
         type1_noise_heteroscedastic[neg] = np.sqrt(type1_noise_[0] ** 2 +
                                                          ((np.abs(x_stim[neg]) - type1_thresh_[0]) * type1_heteroscedastic_[0]) ** 2)  # noqa
         type1_noise_heteroscedastic[pos] = np.sqrt(type1_noise_[1] ** 2 +
@@ -155,10 +154,12 @@ def compute_signal_dependent_type1_noise(x_stim, type1_noise=None, type1_thresh=
 
 
 def type1_evidence_to_confidence(z1_type1_evidence,
-                                 type2_evidence_bias_mult=1,
+                                 type1_dist='normal',
+                                 type2_evidence_bias=1,
+                                 type2_confidence_bias=1,
                                  type1_noise=None, type1_thresh=None,
-                                 type1_noise_heteroscedastic=None, type1_noise_signal_dependency='none',
-                                 y_decval=None, x_stim=None,
+                                 type1_noise_heteroscedastic=None, type1_noise_signal_dependency=None,
+                                 x_stim=None,
                                  **kwargs):  # noqa
     """
     Transformation from type 1 evidence (z1) to confidence (c).
@@ -167,16 +168,18 @@ def type1_evidence_to_confidence(z1_type1_evidence,
     ----------
     z1_type1_evidence : array-like
         Evidence at the type 1 level (= absolute decision value).
-    type2_evidence_bias_mult : float or array-like
+    type1_dist : str
+        Type 1 noise distribution ('normal' or 'logistic')
+    type2_evidence_bias : float or array-like
         Multiplicative metacognitive bias parameter loading on evidence.
+    type2_confidence_bias : float or array-like
+        Power-law confidence bias
     type1_noise : float or array-like
         Type 1 noise parameter. Can be array-like in case of signal-dependent type 1 noise.
     type1_noise_heteroscedastic : float or array-like
         Signal-dependent type 1 noise parameter.
     type1_noise_signal_dependency : str
         Signal-dependent type 1 noise type. One of 'linear', 'power', 'exponential', 'logarithm'.
-    y_decval : array-like
-        Decision values.
     x_stim : array-like
         Array of signed stimulus intensity values, where the sign codes the stimulus category and the absolut value
         codes the intensity.
@@ -190,7 +193,7 @@ def type1_evidence_to_confidence(z1_type1_evidence,
     """
     z1_type1_evidence = np.atleast_1d(z1_type1_evidence)
 
-    if ((type1_noise_signal_dependency != 'none') or (hasattr(type1_noise, '__len__') and len(type1_noise) == 2)):
+    if ((type1_noise_signal_dependency is not None) or (listlike(type1_noise) and len(type1_noise) == 2)):
         if x_stim is None:
             raise ValueError('Type 1 noise is signal-dependent, but stimuli (x_stim) have not been '
                              'passed.')
@@ -199,16 +202,22 @@ def type1_evidence_to_confidence(z1_type1_evidence,
             type1_noise=type1_noise, type1_thresh=type1_thresh, type1_noise_heteroscedastic=type1_noise_heteroscedastic,
             type1_noise_signal_dependency=type1_noise_signal_dependency)
 
-    z2_type2_evidence = type2_evidence_bias_mult * z1_type1_evidence
-    c_conf = np.tanh(np.pi * z2_type2_evidence / (2 * np.sqrt(3) * type1_noise))
+    z2_type2_evidence = type2_evidence_bias * z1_type1_evidence
+
+    if type1_dist == 'normal':
+        c_conf = (2 * ndtr(z2_type2_evidence / type1_noise) - 1) ** (1/type2_confidence_bias)
+    elif type1_dist == 'logistic':
+        c_conf = np.tanh(np.pi * z2_type2_evidence / (2 * np.sqrt(3) * type1_noise)) ** (1/type2_confidence_bias)
 
     return c_conf
 
 
 def confidence_to_type1_evidence(c_conf,
-                                 type2_evidence_bias_mult=1,
+                                 type1_dist='normal',
+                                 type2_evidence_bias=1,
+                                 type2_confidence_bias=1,
                                  type1_noise=None, type1_thresh=None,
-                                 type1_noise_heteroscedastic=None, type1_noise_signal_dependency='none',
+                                 type1_noise_heteroscedastic=None, type1_noise_signal_dependency=None,
                                  y_decval=None, x_stim=None,
                                  tile_on_type1_uncertainty=True,
                                  **kwargs):  ## noqa
@@ -219,8 +228,12 @@ def confidence_to_type1_evidence(c_conf,
     ----------
     c_conf : array-like
         Confidence ratings (from behavioral or simulated data).
-    type2_evidence_bias_mult : float or array-like
+    type1_dist : str
+        Type 1 noise distribution ('normal' or 'logistic')
+    type2_evidence_bias : float or array-like
         Multiplicative metacognitive bias parameter loading on evidence.
+    type2_confidence_bias : float or array-like
+        Power-law confidence bias
     type1_noise : float or array-like
         Type 1 noise parameter. Can be array-like in case of signal-dependent type 1 noise.
     type1_noise_heteroscedastic : float or array-like
@@ -243,7 +256,7 @@ def confidence_to_type1_evidence(c_conf,
     if tile_on_type1_uncertainty and y_decval is not None:
         c_conf = np.tile(c_conf, y_decval.shape[-1])
 
-    if ((type1_noise_signal_dependency != 'none') or (hasattr(type1_noise, '__len__') and len(type1_noise) == 2)):
+    if ((type1_noise_signal_dependency is not None) or (hasattr(type1_noise, '__len__') and len(type1_noise) == 2)):
         if x_stim is None:
             raise ValueError('Type 1 noise is signal-dependent, but stimuli (x_stim) have not been '
                              'passed.')
@@ -251,10 +264,18 @@ def confidence_to_type1_evidence(c_conf,
             x_stim, type1_noise=type1_noise, type1_thresh=type1_thresh, type1_noise_heteroscedastic=type1_noise_heteroscedastic,
             type1_noise_signal_dependency=type1_noise_signal_dependency)
 
-    c_conf = np.minimum(1 - 1e-8, c_conf)
-    z2_type2_evidence = (2 * np.sqrt(3) * type1_noise / np.pi) * np.arctanh(c_conf)
 
-    z1_type1_evidence = z2_type2_evidence / type2_evidence_bias_mult
+    if type2_confidence_bias == 1:
+        c_conf = np.minimum(1 - 1e-8, c_conf)
+    else:
+        c_conf =np.minimum(1 - 1e-8, c_conf ** type2_confidence_bias)
+
+    if type1_dist == 'normal':
+        z2_type2_evidence = type1_noise * ndtri((c_conf + 1) / 2)
+    elif type1_dist == 'logistic':
+        z2_type2_evidence = (2 * np.sqrt(3) * type1_noise / np.pi) * np.arctanh(c_conf)
+
+    z1_type1_evidence = z2_type2_evidence / type2_evidence_bias
 
 
     return z1_type1_evidence
@@ -262,9 +283,11 @@ def confidence_to_type1_evidence(c_conf,
 
 
 def confidence_to_type1_noise(c_conf,
-                              type2_evidence_bias_mult=1,
+                              type1_dist='normal',
+                              type2_evidence_bias=1,
+                              type2_confidence_bias=1,
                               type1_noise=None, type1_thresh=None,
-                              type1_noise_heteroscedastic=None, type1_noise_signal_dependency='none',
+                              type1_noise_heteroscedastic=None, type1_noise_signal_dependency=None,
                               y_decval=None, x_stim=None,
                               tile_type1_uncertainty=False,
                               **kwargs):  ## noqa
@@ -275,8 +298,12 @@ def confidence_to_type1_noise(c_conf,
     ----------
     c_conf : array-like
         Confidence ratings (from behavioral or simulated data).
-    type2_evidence_bias_mult : float or array-like
+    type1_dist : str
+        Type 1 noise distribution ('normal' or 'logistic')
+    type2_evidence_bias : float or array-like
         Multiplicative metacognitive bias parameter loading on evidence.
+    type2_confidence_bias : float or array-like
+        Power-law confidence bias
     type1_noise : float or array-like
         Type 1 noise parameter. Can be array-like in case of signal-dependent type 1 noise.
     type1_noise_heteroscedastic : float or array-like
@@ -301,9 +328,9 @@ def confidence_to_type1_noise(c_conf,
     elif tile_type1_uncertainty:
         c_conf = np.tile(c_conf, y_decval.shape[-1])
 
-    if ((type1_noise_signal_dependency != 'none') or (hasattr(type1_noise, '__len__') and len(type1_noise) == 2)):
+    if ((type1_noise_signal_dependency is not None) or (hasattr(type1_noise, '__len__') and len(type1_noise) == 2)):
         raise ValueError('Signal-dependency or dual parameter mode not yet supported for type2 noise type '
-                         '"noisy_temperature"')
+                         '"temperature"')
         # if x_stim is None:
         #     raise ValueError('Type 1 noise is signal-dependent, but stimuli (x_stim) have not been '
         #                      'passed.')
@@ -311,20 +338,28 @@ def confidence_to_type1_noise(c_conf,
         #     x_stim, type1_noise=type1_noise, type1_thresh=type1_thresh, type1_noise_heteroscedastic=type1_noise_heteroscedastic,
         #     type1_noise_signal_dependency=type1_noise_signal_dependency)
 
-    c_conf = np.maximum(1e-8, np.minimum(1 - 1e-8, c_conf))
+    if type2_confidence_bias == 1:
+        c_conf = np.maximum(1e-8, np.minimum(1 - 1e-8, c_conf))
+    else:
+        c_conf = np.maximum(1e-8, np.minimum(1 - 1e-8, c_conf ** type2_confidence_bias))
 
-    z2_type2_evidence = np.abs(y_decval) * type2_evidence_bias_mult
+    z2_type2_evidence = np.abs(y_decval) * type2_evidence_bias
 
-    type1_noise = (np.pi / (2 * np.sqrt(3))) * (z2_type2_evidence / np.arctanh(c_conf))
+    if type1_dist == 'normal':
+        type1_noise = z2_type2_evidence / ndtri((c_conf + 1) / 2)
+    elif type1_dist == 'logistic':
+        type1_noise = (np.pi / (2 * np.sqrt(3))) * (z2_type2_evidence / np.arctanh(c_conf))
 
     return type1_noise
 
 
 
 def type1_noise_to_confidence(type1_noise,
-                              type2_evidence_bias_mult=1,
+                              type1_dist='normal',
+                              type2_evidence_bias=1,
+                              type2_confidence_bias=1,
                               type1_thresh=None,
-                              type1_noise_heteroscedastic=None, type1_noise_signal_dependency='none',
+                              type1_noise_heteroscedastic=None, type1_noise_signal_dependency=None,
                               y_decval=None, x_stim=None,
                               **kwargs):  # noqa
     """
@@ -334,8 +369,12 @@ def type1_noise_to_confidence(type1_noise,
     ----------
     z1_type1_evidence : array-like
         Evidence at the type 1 level (= absolute decision value).
-    type2_evidence_bias_mult : float or array-like
+    type1_dist : str
+        Type 1 noise distribution ('normal' or 'logistic')
+    type2_evidence_bias : float or array-like
         Multiplicative metacognitive bias parameter loading on evidence.
+    type2_confidence_bias : float or array-like
+        Power-law confidence bias
     type1_noise : float or array-like
         Type 1 noise parameter. Can be array-like in case of signal-dependent type 1 noise.
     type1_noise_heteroscedastic : float or array-like
@@ -356,9 +395,9 @@ def type1_noise_to_confidence(type1_noise,
         Model-predicted confidence.
     """
 
-    if ((type1_noise_signal_dependency != 'none') or (hasattr(type1_noise, '__len__') and len(type1_noise) == 2)):
+    if ((type1_noise_signal_dependency is not None) or (hasattr(type1_noise, '__len__') and len(type1_noise) == 2)):
         raise ValueError('Signal-dependency or dual parameter mode not yet supported for type2 noise type '
-                         '"noisy_temperature"')
+                         '"temperature"')
         # if x_stim is None:
         #     raise ValueError('Type 1 noise is signal-dependent, but stimuli (x_stim) have not been '
         #                      'passed.')
@@ -367,7 +406,11 @@ def type1_noise_to_confidence(type1_noise,
         #     type1_noise=type1_noise, type1_thresh=type1_thresh, type1_noise_heteroscedastic=type1_noise_heteroscedastic,
         #     type1_noise_signal_dependency=type1_noise_signal_dependency)
 
-    z2_type2_evidence = type2_evidence_bias_mult * np.abs(y_decval)
-    c_conf = np.tanh(np.pi * z2_type2_evidence / (2 * np.sqrt(3) * type1_noise))
+    z2_type2_evidence = type2_evidence_bias * np.abs(y_decval)
+
+    if type1_dist == 'normal':
+        c_conf = (2 * ndtr(z2_type2_evidence / type1_noise) - 1) ** (1/type2_confidence_bias)
+    elif type1_dist == 'logistic':
+        c_conf = (np.tanh(np.pi * z2_type2_evidence / (2 * np.sqrt(3) * type1_noise))) ** (1/type2_confidence_bias)
 
     return c_conf
