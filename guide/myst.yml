@@ -11,16 +11,18 @@ project:
   toc:
     # Note that the first (invsible) and third (non-clickable) entry are "dummy entries" controlled via CSS
     - file: content/intro.md
-    - title: → API
-      url: https://re-meta.github.io/api/
-    - file: content/intro.md
       title: Guide
-    - file: content/intro.md
-      title: Introduction
     - file: content/install.md
-    - file: content/architecture.md
+    - file: content/intro.md
     - file: content/start.ipynb
-    - file: content/visualize_nonlinear_encoding.ipynb
+    - file: content/type1.ipynb
+    - file: content/type2.ipynb
+    - file: content/group_estimation_priors.ipynb
+    - file: content/results.ipynb
+    - file: content/configuration.ipynb
+    - file: content/plotting.ipynb
+    - title: API
+      url: https://re-meta.github.io/api/    
 site:
   template: book-theme
 #  nav:
@@ -45,11 +47,15 @@ site:
     # hide_toc: true
     # hide_title_block: true
     # favicon: favicon.ico
+    numbered_references: true
     # logo: site_logo.png
+  citations:
+    style: ieee
   parts:
     primary_sidebar_footer: ""
 
 
 references:
+  csl: ieee.csl
   bibliography:
     - references.bib

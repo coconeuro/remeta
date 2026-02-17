@@ -1,5 +1,5 @@
 /* Hide the download/source button in the navigation bar */
-.downloads-dropdown,
+/* .downloads-dropdown,
 [class*="downloads"],
 [class*="Downloads"],
 .group\/downloads,
@@ -9,31 +9,37 @@ nav a[aria-label*="download" i],
 nav a[aria-label*="Download" i],
 .article-nav button svg[role="img"],
 [aria-label="Downloads"] {
-    display: none !important;
-}
+  display: none !important;
+} */
 
 .myst-search-shortcut {
-    display: none;
+  display: none;
 }
 
 .myst-theme-button {
-    display: none;
+  display: none;
 }
+
+/* Hide third level in the right outline */
+/* li>a.pl-8 {
+  display: none
+} */
+
 
 /* Justify text in the main content container */
 main p,
 article p {
-    text-align: justify;
+  text-align: justify;
 }
 
 
 /* Hide first navigation entry */
-nav.myst-primary-sidebar-toc > div.myst-toc > a:first-child {
+/* nav.myst-primary-sidebar-toc>div.myst-toc>a:first-child {
   display: none;
-}
+} */
 
-/* Adapt third navigation entry */
-nav.myst-primary-sidebar-toc > div.myst-toc > a:nth-child(3) {
+/* Adapt first navigation entry */
+nav.myst-primary-sidebar-toc>div.myst-toc>a:nth-child(1) {
   pointer-events: none;
   cursor: none;
   color: inherit;
@@ -48,8 +54,9 @@ nav.myst-primary-sidebar-toc > div.myst-toc > a:nth-child(3) {
 }
 
 /* Style Github icon */
-nav.myst-top-nav-bar div.hidden.sm\:block > a[href^="https://github.com/"] {
-  font-size: 0;            /* hide text */
+nav.myst-top-nav-bar div.hidden.sm\:block>a[href^="https://github.com/"] {
+  font-size: 0;
+  /* hide text */
   width: 2.25rem;
   height: 2.25rem;
   padding: 0;
@@ -69,6 +76,13 @@ nav.myst-top-nav-bar div.hidden.sm\:block > a[href^="https://github.com/"] {
 }
 
 /* Somehow this disables the hover effect on the Github icon */
-nav.myst-top-nav-bar div.hidden.sm\:block > a[href^="https://github.com/"]  {
+nav.myst-top-nav-bar div.hidden.sm\:block>a[href^="https://github.com/"] {
   background-color: black !important;
+}
+
+/* Make numerical citations superscript */
+span.cite-group.parenthetical {
+  vertical-align: super;
+  font-size: 0.8em;
+  margin-left: 0.2em;
 }
