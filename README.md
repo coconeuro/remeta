@@ -1,24 +1,39 @@
-Go directly to:
-- [**Installation**](https://github.com/coconeuro/remeta/blob/main/INSTALL.md)
-- [**Basic Usage**](https://github.com/coconeuro/remeta/blob/main/demo/basic_usage.ipynb)
-- [**Common use cases**](https://github.com/coconeuro/remeta/blob/main/demo/common_use_cases.ipynb)
-- [**Group estimation and priors**](https://github.com/coconeuro/remeta/blob/main/demo/group_estimation_priors.ipynb)
-
-
 # ReMeta Toolbox
 
-The ReMeta toolbox allows researchers to estimate latent type 1 and type 2 parameters based on data of cognitive or perceptual decision-making tasks with two response categories. 
+The ReMeta ("Reverse engineering of Metacognition") toolbox allows researchers to estimate latent type 1 and type 2 parameters based on data of cognitive or perceptual decision-making tasks with two response categories. 
+
+**Guide:** https://re-meta.github.io/
+
+**Original paper:** Guggenmos, M. (2022). Reverse engineering of metacognition. eLife, 11. https://doi.org/10.7554/elife.75420
+
+**Citation for Toolbox:** Guggenmos, M. (<year-of-release>). ReMeta toolbox (Version X.Y.Z) [Computer software]. GitHub. https://github.com/coconeuro/remeta
+
+
+### Installation
+
+Remeta is a Python toolbox requires a working Python installation. It should run with Python >=3.10.
+
+Install the latest release with `pip`:
+```
+pip install remeta
+```
+
+Or the most recent code base via GitHub:
+```
+pip install git+https://github.com/m-guggenmos/remeta.git
+```
+(this command requires an installed Git, e.g. [gitforwindows](https://gitforwindows.org/))
 
 
 ### Minimal example
 Three types of data are required to fit a model:
 
 <!---  Table --->
-| Type       | Variable     |Description
-|------------|--------------|----------|
-| Stimuli    | `stimuli`    | list/array of signed stimulus intensity values, where the sign codes the stimulus category and the absolute value codes the intensity. The stimuli should be normalized to [-1; 1], although there is a setting (`normalize_stimuli_by_max`) to auto-normalize stimuli         |
-| Choices    | `choices`    | list/array of choices coded as 0 (or alternatively -1) for the negative stimuli category and 1 for the positive stimulus category.         |
-| Confidence | `confidence` | list/array of confidence ratings. Confidence ratings must be normalized to [0; 1]. Discrete confidence ratings must be normalized accordingly (e.g., if confidence ratings are 1-4, subtract 1 and divide by 3).         |
+| Type       | Variable     | Description                                                                                                                                                                                                                                                                                
+|------------|--------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Stimuli    | `stimuli`    | list/array of signed stimulus intensity values, where the sign codes the stimulus category and the absolute value codes the intensity. The stimuli should be roughly in the range [-1; 1], although there is a setting (`normalize_stimuli_by_max`) to auto-normalize stimuli |
+| Choices    | `choices`    | list/array of choices coded as 0 (or alternatively -1) for the negative stimuli category and 1 for the positive stimulus category.                                                                                                                                                         |
+| Confidence | `confidence` | list/array of confidence ratings. Confidence ratings must be normalized to [0; 1]. Discrete confidence ratings must be normalized accordingly (e.g., if confidence ratings are 1-4, subtract 1 and divide by 3).                                                                           |
 
 A minimal example would be the following:
 ```python
@@ -31,61 +46,50 @@ rem.fit(ds.stimuli, ds.choices, ds.confidence)
 Output (for load_dataset):
 ```
 ..Generative model:
-    Type 2 noise type: noisy_report
-    Type 2 noise distribution: truncated_norm_mode
+    Type 1 noise distribution: normal
+    Type 2 noise type: report
+    Type 2 noise distribution: beta_mode
 ..Generative parameters:
     type1_noise: 0.5
     type1_bias: -0.1
     type2_noise: 0.3
-    type2_criteria: [0.2 0.2 0.2 0.2]
-    Type 2 criteria (absolute): [0.2, 0.4, 0.6, 0.8]
-    Criterion bias: 0
+    type2_criteria: [0.25 0.5  0.75]
+        [extra] Criterion bias: 0.0000
+        [extra] Criterion-based confidence bias: 0.0000
 ..Descriptive statistics:
     No. subjects: 1
     No. samples: 2000
-    Performance: 86.5% correct
-    Choice bias: -3.1%
-    Confidence: 0.62
-    M-Ratio: 0.58
-    AUROC2: 0.69
+    Accuracy: 85.2% correct
+    d': 2.1
+    Choice bias: -3.9%
+    Confidence: 0.53
+    M-Ratio: 0.33
+    AUROC2: 0.60
 ```
 Output (for fit):
 ```
 +++ Type 1 level +++
   Subject-level estimation (MLE)
-    .. finished (0.3 secs).
+    .. finished (0.1 secs).
   Final report
     Parameters estimates (subject-level fit)
-        [subject] type1_noise: 0.503
-        [subject] type1_bias: -0.0821
-    [subject] Neg. LL: 683.64
-    [subject] Fitting time: 0.25 secs
+        [subject] type1_noise: 0.510 ± 0.018
+        [subject] type1_bias: -0.099 ± 0.019
+    [subject] Log-likelihood: -717.84 (per sample: -0.3589)
+    [subject] Fitting time: 0.13 secs
 Type 1 level finished
 
 +++ Type 2 level +++
   Subject-level estimation (MLE)
-        Grid search activated (grid size = 2048)
-        Grid iteration 1000 / 2048
-        Grid iteration 2000 / 2048
-            [grid] type2_noise: 0.2641
-            [grid] type2_criteria_0: 0.1667
-            [grid] type2_criteria_1: 0.2 = gap | criterion = 0.4
-            [grid] type2_criteria_2: 0.2 = gap | criterion = 0.6
-            [grid] type2_criteria_3: 0.2 = gap | criterion = 0.8
-        Grid neg. LL: 3636.9
-        Grid runtime: 150.86 secs
-    .. finished (199.1 secs).
+    .. finished (77.8 secs).
   Final report
     Parameters estimates (subject-level fit)
-        [subject] type2_noise: 0.288
-        [subject] type2_criteria_0: 0.189
-        [subject] type2_criteria_1: 0.21 = gap | criterion = 0.399
-        [subject] type2_criteria_2: 0.206 = gap | criterion = 0.605
-        [subject] type2_criteria_3: 0.194 = gap | criterion = 0.798
-            [extra] type2_criteria_absolute: [0.189, 0.399, 0.605, 0.798]
-            [extra] type2_criteria_bias: -0.00211
-    [subject] Neg. LL: 3605.21
-    [subject] Fitting time: 198.89 secs
+        [subject] type2_noise: 0.264 ± 0.031
+        [subject] type2_criteria: [0.268 ± 0.014, 0.512 ± 0.012, 0.758 ± 0.008]
+            [extra] type2_criteria_bias: 0.009 ± 0.008
+            [extra] type2_criteria_confidence_bias: -0.009 ± 0.008
+    [subject] Log-likelihood: -3425.60 (per sample: -1.713)
+    [subject] Fitting time: 32.41 secs
 Type 2 level finished
 ```
 
@@ -97,44 +101,28 @@ We can access the fitted parameters by invoking the `summary()` method on the `R
 # Access fitted parameters
 import numpy as np
 result = rem.summary()
-for k, v in result.model.params.items():
+for k, v in result.params.items():
     print(f'{k}: {np.array2string(np.array(v), precision=3)}')
 ```
 
 Ouput:
 ```
-type1_noise: 0.503
-type1_bias: -0.082
-type2_noise: 0.288
-type2_criteria: [0.189 0.21  0.206 0.194]
-```
-
-By default, the model fits parameters for type 1 noise (`type1_noise`) and a type 1 bias (`type1_bias`), as well as metacognitive 'type 2' noise (`type2_noise`) and 4 confidence criteria (`type2_criteria`). Moreover, by default the model assumes that metacognitive noise occurs at the stage of the confidence report (setting `type2_noise_type='noisy_report'`) and that type 2 metacognitive noise can be described by a truncated normal distribution (setting `type2_noise_dist='truncated_norm_mode'`).
-
-All settings can be changed via the `Configuration` object which is optionally passed to the `ReMeta` instance. For example, to change the metacognitive noisy type to "noisy-readout":
-
-```python
-cfg = remeta.Configuration()
-cfg.type2_noise_type = 'noisy_readout'
-rem = remeta.ReMeta(cfg)
-...
+type1_noise: 0.51
+type1_bias: -0.099
+type2_noise: 0.264
+type2_criteria: [0.268 0.512 0.758]
 ```
 
 ### Supported parameters
 
-_Type 1 parameters_:
-- `type1_noise`: type 1 noise
-- `type1_bias`: type 1 bias towards one of the two stimulus categories
-- `type1_thresh`: a (sensory) threshold, building on the assumption that a certain minimal stimulus intensity is required to elicit behavior; use only if there are stimulus intensities close to threshold
-- `type1_nonlinear_encoding_gain`: gain parameter to control nonlinear encoding of the stimulus
-- `type1_nonlinear_encoding_transition`: transition parameter to control nonlinear encoding of the stimulus
-- `type1_noise_heteroscedastic`: parameter to specify stimulus-dependent type 1 noise (e.g. multiplicative noise)
-
-_Type 2 (metacognitive) parameters:_
-- `type2_noise`: metacognitive noise
-- `type2_criteria`: confidence criteria
-- `type2_evidence_bias_mult`: optional multiplicative metacognitive bias
-
-In addition, each type 1 parameter can be fitted in "duplex mode", such that separate values are fitted depending on the stimulus category.
-
-A more detailed guide to use the toolbox is provided in the following Jupyter notebook: [**Basic Usage**](https://github.com/coconeuro/remeta/blob/main/demo/basic_usage.ipynb)
+| Parameter | Description | Default  |
+|----------|----------|----------|
+|`type1_noise`|Type 1 noise| Enabled  |
+|`type1_bias`|Choice bias| Enabled  |
+|`type1_thresh`|Sensory threshold| Disabled |
+|`type1_nonlinear_encoding_gain`|Nonlinear encoding| Disabled |
+|`type1_nonlinear_encoding_scale`|Nonlinear encoding| Disabled |
+|`type2_noise`|Metacognitive noise| Enabled  |
+|`type2_evidence_bias`|Metacognitive evidence bias| Disabled |
+|`type2_confidence_bias`|Metacognitive confidence bias| Disabled |
+|`type2_criteria`|Confidence criteria| Enabled  |
