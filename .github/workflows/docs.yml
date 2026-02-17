@@ -27,13 +27,14 @@ jobs:
         run: |
           # If mkdocstrings needs to import your repo package, uncomment:
           # export PYTHONPATH="$GITHUB_WORKSPACE"
-          python - <<'PY'
-          import remeta.gendata, remeta.plot, remeta.configuration
-          import inspect
-          print("gendata members:", [n for n,_ in inspect.getmembers(remeta.gendata) if not n.startswith("__")][:30])
-          print("plot members:",   [n for n,_ in inspect.getmembers(remeta.plot) if not n.startswith("__")][:30])
-          PY
-          mkdocs build -v --clean --config-file api/mkdocs.yml
+          # python - <<'PY'
+          # import remeta.simulation, remeta.plotting, remeta.configuration, remeta.model
+          # import inspect
+          # print("gendata members:", [n for n,_ in inspect.getmembers(remeta.gendata) if not n.startswith("__")][:30])
+          # print("plot members:",   [n for n,_ in inspect.getmembers(remeta.plot) if not n.startswith("__")][:30])
+          # PY
+          mkdocs build --clean --config-file api/mkdocs.yml
+          # mkdocs build -v --clean --config-file api/mkdocs.yml
 
       - name: Push api/site to re-meta/re-meta.github.io
         uses: peaceiris/actions-gh-pages@v4
