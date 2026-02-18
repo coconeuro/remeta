@@ -41,7 +41,7 @@ class ReMeta:
             for a default model, or otherwise:
 
             ```
-            cfg = remeta.configuration
+            cfg = remeta.Configuration()
             cfg.<some_setting> = <some_value>
             rem = remeta.ReMeta(cfg)
             ```

@@ -8,7 +8,7 @@ The basic architecture of the toolbox is shown in the figure below.
 
 :::{figure} img/model.png
 :align: center
-:width: 75%
+:width: 100%
 :::
 
 **From stimulus $x$ to decisions $D$...**

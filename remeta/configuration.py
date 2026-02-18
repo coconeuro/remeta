@@ -21,6 +21,15 @@ class Configuration(ReprMixin):
         cfg.<some_setting> = <some_value>
         rem = remeta.ReMeta(cfg)
         ```
+
+        To change parameters use:
+        ```
+        cfg.param_<param_name>.<param_attribute> = <value>
+        ```
+
+        See [`Parameter`][remeta.modelspec.Parameter] for more information.
+
+
     """
 
     ### Important settings

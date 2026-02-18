@@ -54,6 +54,7 @@ plugins:
             show_source: true
             relative_crossrefs: true
             show_bases: false
+            show_root_heading: false
             show_root_toc_entry: false
 #            allow_inspection: true
 #            force_inspection: true
@@ -77,5 +78,10 @@ nav:
   - API: index.md
   - ReMeta: model.md
   - Configuration: configuration.md  
+  - Parameter: parameter.md
   - Simulation: simulation.md
-  - Plotting: plot.md
+  - Plotting: plot.md  
+
+# markdown_extensions:
+#   - pymdownx.highlight
+#   - pymdownx.superfences  

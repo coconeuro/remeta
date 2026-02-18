@@ -10,39 +10,79 @@ from .util import (TAB, SP2, Struct, ReprMixin, create_struct_with_reprmixin, sp
 
 
 class Parameter(ReprMixin):
-    def __init__(self, enable=None, guess=None, bounds=None, grid_range=None, group=None,
-                 prior=None, preset=None, default=None, model=None):
-        """
-        Class that defines the fitting characteristics of a Parameter.
+    """Definition of ReMeta parameter
 
-        Parameters
-        ----------
-        enable : int
-            0 = disabled
-            integer > 0: enabled (typically 1, but can be 2 for type 1 parameters if fitted separately to both
-                         stimulus categories; in case of param_type2_criteria, the number sets the
-                         number of confidence criteria (=number of discrete confidence ratings minus 1).
-        bounds: None | array-like of length 2
-            Parameter bounds. The first and second element indicate the lower and upper bound of the parameter.
-        grid_range: None | array-like (1d)
-            1-d grid for initial gridsearch in the parameter optimization procedure
-        group: None | str
-            None: no group-level estimate for the parameter
-            'fixed': fit parameter as a group fixed effect (i.e., single value for the group)
-            'random': fit parameter as a random effect (enforces shrinkage towards a group mean)
-        prior: None | tuple[float, float]
-            None: no prior for the parameter
+    Usage:
+        The Parameter class should only be used in the context of a
+        [`Configuration`][remeta.configuration.Configuration] instance. This ensures that sensible defaults are used
+        for unspecified attributes of the parameter.
+
+        ```
+        cfg = remeta.Configuration()
+        ```
+
+        Disable parameter: `cfg.param_type1_bias.enable = 0`
+
+        Enable parameter: `cfg.param_type1_tresh.enable = 1`
+
+        Change the initial guess: `cfg.param_type1_noise.guess = 0.8`
+
+        Change parameter bounds: `cfg.param_type1_noise.bounds = (1e-2, 2)`
+
+        Change values visited during grid search: `cfg.param_type1_noise.grid_range = np.arange(0.1, 0.5, 0.05)`
+
+        Make a parameter a group-level (e.g. random-effects) parameter: `cfg.param_type1_thresh.group = 'random'`
+
+        Create a parameter prior with (mean, SD): `cfg.param_type1_bias.prior = (0, 0.1)`
+
+        Change the noise distribution: `cfg.param_type1_noise.model = 'logistic'`
+
+
+    Args:
+        enable:
+            `0`: disabled;
+
+            `integer > 0`: enabled (typically 1, but can be 2 for type 1 parameters if fitted
+            separately to both stimulus categories; in case of param_type2_criteria, the number sets the
+            number of confidence criteria (=number of discrete confidence ratings minus 1).
+        guess:
+            Initial guess for parameter optimization
+        bounds:
+            Parameter bounds of the form (lower bound, upper bound).
+        grid_range:
+            1-d grid for initial gridsearch in the parameter optimization procedure.
+        group:
+            `None`: no group-level estimate for the parameter
+
+            `'fixed'`: fit parameter as a group fixed effect (i.e., single value for the group)
+
+            `'random'`: fit parameter as a random effect (enforces shrinkage towards a group mean)
+        prior:
+            `None`: no prior for the parameter
             (group_mean, group_sd): apply a Normal prior defined by mean and standard deviation
-        preset: None | float or array-like[[float]
-            Instead of fitting a parameter, set it to a fixed value. Note that this automatically disables the
-            parameter, i.e. parameter.enable will be set to 0.
-        default: None | float or array-like[float
+        preset:
+            (not yet supported) Instead of fitting a parameter, set it to a fixed value. Note that this
+            automatically disables the parameter, i.e. parameter.enable will be set to 0.
+        default:
             This an internal attribute, that should typically not be touched. It specifies a default value
             for a parameter that may be used if the parameter is not fitted.
-        model: None | str
+        model:
             For noise parameters, specifies an appropriate sampling distribution.
-            For other parameters, it may specify a function that is paramterized.
-        """
+            For other parameters, it may specify a function that is parameterized.
+    """
+    def __init__(
+        self,
+        enable: int = None,
+        guess: float  = None,
+        bounds: tuple[float, float] = None,
+        grid_range: list[float] | np.typing.NDArray[float] = None,
+        group: None | str = None,
+        prior: None | tuple[float, float] = None,
+        preset: None | float = None,
+        default: None | float = None,
+        model: None | str = None
+    ):
+
         self.enable = enable if preset is None else 0
         self.guess = guess
         self.bounds = bounds
