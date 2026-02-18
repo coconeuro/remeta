@@ -12,6 +12,11 @@ nav a[aria-label*="Download" i],
   display: none !important;
 } */
 
+/* Hide references on index page */
+body:has(.myst-toc-item.active[href="/"]) section#references {
+  display: none;
+}
+
 .myst-search-shortcut {
   display: none;
 }
@@ -40,10 +45,10 @@ article p {
 
 /* Adapt first navigation entry */
 nav.myst-primary-sidebar-toc>div.myst-toc>a:nth-child(1) {
-  pointer-events: none;
-  cursor: none;
+  /* pointer-events: none; */
+  /* cursor: none; */
   color: inherit;
-  user-select: none;
+  /* user-select: none; */
   text-decoration: underline;
   text-underline-offset: 0.5em;
   text-decoration-color: #555;

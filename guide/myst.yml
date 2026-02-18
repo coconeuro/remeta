@@ -10,7 +10,7 @@ project:
   # To autogenerate a Table of Contents, run "jupyter book init --write-toc"Note, t
   toc:
     # Note that the first (invsible) and third (non-clickable) entry are "dummy entries" controlled via CSS
-    - file: content/intro.md
+    - file: content/index.md
       title: Guide
     - file: content/install.md
     - file: content/intro.md
