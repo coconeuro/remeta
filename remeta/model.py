@@ -104,6 +104,8 @@ class ReMeta:
         if not self.cfg.skip_type2:
             self.fit_type2(verbosity=verbosity, silence_warnings=silence_warnings)
 
+        return self
+
 
     def fit_type1(
         self,
@@ -178,7 +180,7 @@ class ReMeta:
                         minimize_along_grid=self.cfg.optim_type1_minimize_along_grid,
                         global_minimization=self.cfg.optim_type1_global_minimization,
                         # fine_gridsearch=self.cfg.optim_type1_fine_gridsearch,
-                        verbosity=verbosity
+                        verbosity=verbosity, silence_warnings=silence_warnings
                     )
                 if use_multiproc_for_subject_loop:
                     with DillPool(self.cfg._optim_num_cores) as pool:
@@ -240,6 +242,8 @@ class ReMeta:
         if verbosity:
             print('Type 1 level finished')
 
+        return self
+
 
     def fit_type2(self, verbosity=1, silence_warnings=False):
 
@@ -281,7 +285,7 @@ class ReMeta:
                         global_minimization=self.cfg.optim_type2_global_minimization,
                         # fine_gridsearch=self.cfg.optim_type2_fine_gridsearch,
                         scipy_solvers=self.cfg.optim_type2_scipy_solvers, slsqp_epsilon=self.cfg.optim_type2_slsqp_epsilon,
-                        verbosity=verbosity
+                        verbosity=verbosity, silence_warnings=silence_warnings
                     )
                 if use_multiproc_for_subject_loop:
                     with DillPool(self.cfg._optim_multiproc_cores_effective) as pool:
@@ -344,6 +348,8 @@ class ReMeta:
         #     print_warnings(w)
         if verbosity:
             print('Type 2 level finished')
+
+        return self
 
     def summary(self, generative=False, generative_nsamples=1000, squeeze=True):
         """
