@@ -105,9 +105,10 @@ def fgrid(fun, valid, args, num_cores=1, minimize_along_grid=False, bounds=None,
 
 
 def subject_estimation(fun, param_set, args=(), gridsearch=False, num_cores=1,
-                       minimize_along_grid=False, global_minimization=None, verbosity=1,
+                       minimize_along_grid=False, global_minimization=None,
                        # n_grid_candidates=10, n_grid_iter=3,
-                       scipy_solvers='slsqp', slsqp_epsilon=_slsqp_epsilon):
+                       scipy_solvers='slsqp', slsqp_epsilon=_slsqp_epsilon,
+                       verbosity=1, silence_warnings=False):
 
     t0 = timeit.default_timer()
 
@@ -225,8 +226,9 @@ def subject_estimation(fun, param_set, args=(), gridsearch=False, num_cores=1,
                             # Catch this error in trust-constr which is a bug in scipy that has been fixed soon after
                             # the release of scipy 1.17.0:
                             # https://github.com/scipy/scipy/pull/24454
-                            warnings.warn('SciPy trust-constr evaluated outside bounds despite a feasible x0. '
-                                          'Using L-BFGS-B instead.')
+                            if not silence_warnings:
+                                warnings.warn('SciPy trust-constr evaluated outside bounds despite a feasible x0. '
+                                              'Using L-BFGS-B instead.')
                             method = 'L-BFGS-B'
                             fit = sciopt.minimize(fun, x0, bounds=bounds, args=tuple(args),
                                                   constraints=param_set.constraints, method=method)
@@ -254,8 +256,9 @@ def subject_estimation(fun, param_set, args=(), gridsearch=False, num_cores=1,
         # positive definite
         fit_best.hessian = H
     else:
-        warnings.warn(f'Hessian is {"singular" if singular else "not positive definite"}. Standard errors are computed '
-                      f'with a ridged Hessian and may be unreliable for some parameters (check extreme values).')
+        if not silence_warnings:
+            warnings.warn(f'Hessian is {"singular" if singular else "not positive definite"}. Standard errors are computed '
+                          f'with a ridged Hessian and may be unreliable for some parameters (check extreme values).')
         fit_best.hessian = ridge_hessian(H)
 
     return fit_best
