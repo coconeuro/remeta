@@ -6,7 +6,8 @@ from numdifftools import Hessian
 from scipy.stats import norm
 
 from .util import (TAB, SP2, Struct, ReprMixin, create_struct_with_reprmixin, spearman2d, pearson2d, listlike,
-                   empty_list, print_class_instance, cov_from_hessian, se_from_cov, compute_criterion_bias, compute_cov_criteria)
+                   empty_list, print_class_instance, cov_from_hessian, se_from_cov, compute_criterion_bias,
+                   compute_cov_criteria)
 
 
 class Parameter(ReprMixin):
@@ -306,6 +307,8 @@ class Data(ReprMixin):
             self.stats_dprime[s] = norm.ppf(min(1 - 1e-3, max(1e-3, self.d_dec[s][self.x_stim_category[s] == 1].mean()))) - \
                                    norm.ppf(min(1 - 1e-3, max(1e-3, self.d_dec[s][self.x_stim_category[s] == 0].mean().mean()))),
             self.stats_choice_bias[s] = self.d_dec[s].mean() - self.x_stim_category[s].mean()
+            # self.stats_choice_bias[s] = compute_choice_bias(self.x_stim[s], self.d_dec[s])
+            # self.stats_choice_bias[s] = compute_choice_bias_horizontal(self.x_stim[s], self.d_dec[s])
         self.stats.accuracy = np.nanmean(self.stats_accuracy)
         self.stats.dprime = np.nanmean(self.stats_dprime)
         self.stats.choice_bias = np.nanmean(self.stats_choice_bias)
