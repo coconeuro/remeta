@@ -232,12 +232,32 @@ def spearman2d(x, y, axis=-1):
     return r
 
 
+# def cov_from_hessian(H, symmetrize=True):
+#     Hs = 0.5 * (H + H.T) + 1e-12 * np.eye(len(H)) if symmetrize else H + 1e-12 * np.eye(len(H))
+#     c, lower = cho_factor(Hs, lower=True, check_finite=False)  # raises LinAlgError if not SPD
+#     cov = cho_solve((c, lower), np.eye(Hs.shape[0]), check_finite=False)
+#     # numerical cleanup: enforce symmetry
+#     cov = 0.5 * (cov + cov.T)
+#     return cov
+
 def cov_from_hessian(H, symmetrize=True):
-    Hs = 0.5 * (H + H.T) + 1e-12 * np.eye(len(H)) if symmetrize else H + 1e-12 * np.eye(len(H))
-    c, lower = cho_factor(Hs, lower=True, check_finite=False)  # raises LinAlgError if not SPD
-    cov = cho_solve((c, lower), np.eye(Hs.shape[0]), check_finite=False)
+    Hs = 0.5 * (H + H.T) if symmetrize else np.asarray(H, dtype=float)
+    Hs = Hs + 1e-12 * np.eye(Hs.shape[0])
+
+    try:
+        c, lower = cho_factor(Hs, lower=True, check_finite=False)
+        cov = cho_solve((c, lower), np.eye(Hs.shape[0]), check_finite=False)
+    except np.linalg.LinAlgError:
+        from remeta.fit import ridge_hessian
+        Hr = ridge_hessian(Hs)
+        if Hr is None:
+            return None
+        c, lower = cho_factor(Hr, lower=True, check_finite=False)
+        cov = cho_solve((c, lower), np.eye(Hr.shape[0]), check_finite=False)
+
     # numerical cleanup: enforce symmetry
     cov = 0.5 * (cov + cov.T)
+
     return cov
 
 
@@ -275,6 +295,286 @@ def compute_criterion_bias(criteria, cov_crit):
     bias_crit_se = np.sqrt(1 / denom)
 
     return bias_crit, bias_crit_se
+
+def compute_choice_bias(stimuli, choices, smooth=0.5):
+    # levels = np.sort(np.unique(np.abs(stimuli)))
+    # ntrials = len(stimuli)
+
+    # Unique signed levels
+    x_levels = np.unique(stimuli)
+    magnitudes = np.unique(np.abs(x_levels))
+    magnitudes = magnitudes[magnitudes > 0]
+
+    # Aggregate counts
+    k = {}
+    n = {}
+    for x in x_levels:
+        mask = (stimuli == x)
+        n[x] = mask.sum()
+        k[x] = choices[mask].sum()
+
+    D_list, w_list = [], []
+
+    for m in magnitudes:
+        if m in k and -m in k:
+            # empirical proportions
+            p_plus = k[m] / n[m]
+            p_minus = k[-m] / n[-m]
+            # smoothed proportions for variance
+            p_plus_var = (k[m] + smooth) / (n[m] + 2*smooth)
+            p_minus_var = (k[-m] + smooth) / (n[-m] + 2*smooth)
+            var_plus = p_plus_var * (1 - p_plus_var) / n[m]
+            var_minus = p_minus_var * (1 - p_minus_var) / n[-m]
+            D = p_plus + p_minus - 1
+            var_D = var_plus + var_minus
+            if var_D <= 0:
+                continue
+            w = 1.0 / var_D
+            D_list.append(D)
+            w_list.append(w)
+
+    D_arr = np.array(D_list)
+    w_arr = np.array(w_list)
+
+    bias_hat = np.sum(w_arr * D_arr) / np.sum(w_arr)
+
+    return bias_hat
+
+
+def _pav_isotonic(y, w=None):
+    """
+    Pool-Adjacent-Violators (PAV) for isotonic regression (nondecreasing).
+    Returns fitted values yhat with same length as y.
+    """
+    y = np.asarray(y, dtype=float)
+    n = y.size
+    if w is None:
+        w = np.ones(n, dtype=float)
+    else:
+        w = np.asarray(w, dtype=float)
+        if w.shape != y.shape:
+            raise ValueError("w must have same shape as y")
+
+    # Each point starts as its own block
+    v = y.copy()
+    ww = w.copy()
+    start = np.arange(n)
+    end = np.arange(n)
+
+    # Stack of block indices
+    m = 0
+    for i in range(n):
+        start[m] = i
+        end[m] = i
+        v[m] = y[i]
+        ww[m] = w[i]
+        m += 1
+
+        # Merge while monotonicity violated
+        while m >= 2 and v[m-2] > v[m-1]:
+            new_w = ww[m-2] + ww[m-1]
+            new_v = (ww[m-2]*v[m-2] + ww[m-1]*v[m-1]) / new_w
+            ww[m-2] = new_w
+            v[m-2] = new_v
+            end[m-2] = end[m-1]
+            m -= 1
+
+    # Expand blocks
+    yhat = np.empty(n, dtype=float)
+    for b in range(m):
+        yhat[start[b]:end[b]+1] = v[b]
+    return yhat
+
+
+def compute_choice_bias_horizontal_old(stimuli, choices, smooth=0.5):
+    """
+    Horizontal (stimulus-units) bias estimator using:
+      - symmetry deviations across matched ±m levels
+      - inverse-variance weighting from binomial sampling
+      - nonparametric slope estimates from isotonic-smoothed proportions
+
+    Parameters
+    ----------
+    stimuli : (T,) array-like of floats
+        Signed stimulus intensities.
+    choices : (T,) array-like of ints
+        Binary choices: 0=negative category, 1=positive category.
+    smooth : float
+        Jeffreys-style smoothing for variance stability in Var(p).
+
+    Returns
+    -------
+    mu_hat : float
+        Estimated horizontal bias (PSE shift) in stimulus units.
+        Positive mu_hat means the curve is shifted right (harder to choose 1).
+        (Sign convention depends on defining p(x)=P(choice=1|x).)
+    """
+
+    # Aggregate by unique signed intensity
+    x_levels = np.unique(stimuli)
+    x_levels.sort()
+    n = np.zeros_like(x_levels, dtype=int)
+    k = np.zeros_like(x_levels, dtype=int)
+
+    for i, x in enumerate(x_levels):
+        mask = (stimuli == x)
+        n[i] = int(mask.sum())
+        k[i] = int(choices[mask].sum())
+
+    p_hat = k / n
+
+    # Smoothed p for variance stability
+    p_var = (k + smooth) / (n + 2.0 * smooth)
+    var_p = p_var * (1.0 - p_var) / n
+
+    # Monotone smoothing (optional but very helpful) via isotonic regression
+    # Weighted by n to respect unequal trial counts
+    p_iso = _pav_isotonic(p_hat, w=n.astype(float))
+
+    # Slope estimate at each x_level using finite differences on isotonic fit
+    slope = np.empty_like(p_iso, dtype=float)
+    if x_levels.size == 1:
+        raise ValueError("Need more than one stimulus level to estimate slope.")
+
+    # One-sided at edges, central inside
+    slope[0] = (p_iso[1] - p_iso[0]) / (x_levels[1] - x_levels[0])
+    slope[-1] = (p_iso[-1] - p_iso[-2]) / (x_levels[-1] - x_levels[-2])
+    for i in range(1, x_levels.size - 1):
+        slope[i] = (p_iso[i+1] - p_iso[i-1]) / (x_levels[i+1] - x_levels[i-1])
+
+    # Build matched ±m pairs
+    # Map x -> index for quick lookup
+    idx = {float(x): i for i, x in enumerate(x_levels)}
+
+    mags = np.unique(np.abs(x_levels))
+    mags = mags[mags > 0]  # exclude 0
+
+    D_list, s_list, varD_list, w_list, m_list = [], [], [], [], []
+
+    for m in mags:
+        mp = float(m)
+        mm = float(-m)
+        if mp in idx and mm in idx:
+            ip = idx[mp]
+            im = idx[mm]
+
+            # Symmetry deviation uses empirical p_hat (could also use p_iso; choose empiric here)
+            Dm = p_hat[ip] + p_hat[im] - 1.0
+
+            # Sampling variance for Dm from (smoothed) binomial variance
+            varDm = var_p[ip] + var_p[im]
+            if varDm <= 0:
+                continue
+
+            # Slope estimate at ±m from isotonic fit; average them
+            sm = 0.5 * (slope[ip] + slope[im])
+
+            # If slope is ~0, this magnitude carries little info about a horizontal shift
+            # (we can safely drop it)
+            if sm == 0 or not np.isfinite(sm):
+                continue
+
+            wm = 1.0 / varDm
+
+            D_list.append(Dm)
+            s_list.append(sm)
+            w_list.append(wm)
+
+    D = np.asarray(D_list, dtype=float)
+    s = np.asarray(s_list, dtype=float)
+    w = np.asarray(w_list, dtype=float)
+
+    # Weighted LS solution for Dm ≈ -2 s_m mu
+    num = np.sum(w * s * D)
+    den = np.sum(w * s * s)
+
+    mu_hat = num / (2.0 * den)
+
+    return float(mu_hat)
+
+
+
+def compute_choice_bias_horizontal(stimuli, choices, smooth=0.5, eps=1e-12):
+    """
+    Stimulus-space choice bias estimated nonparametrically using ALL stimulus levels with inverse-variance weights.
+
+    Parameters
+    ----------
+    stimuli : (T,) array-like
+        Signed stimulus intensities (numeric).
+    choices : (T,) array-like
+        Binary choices: 0 = negative category, 1 = positive category.
+    smooth : float, default 0.5
+        Jeffreys-style smoothing for variance stability (used in Var estimates only).
+    eps : float, default 1e-12
+        Floors tiny variances to avoid infinite weights.
+
+    Returns
+    -------
+    bias_hat : float
+        Estimated bias in stimulus units (PSE = x where fitted p(x)=0.5).
+        If your logistic is p(x)=sigmoid(beta*(x - mu)), then bias_hat ≈ mu.
+        Returns +inf/-inf if 0.5 is not bracketed by the fitted curve.
+    """
+    stimuli = np.asarray(stimuli, dtype=float)
+    choices = np.asarray(choices, dtype=int)
+
+    if stimuli.ndim != 1 or choices.ndim != 1:
+        raise ValueError("stimuli and choices must be 1D arrays.")
+    if stimuli.size != choices.size:
+        raise ValueError("stimuli and choices must have the same length.")
+    if not np.all((choices == 0) | (choices == 1)):
+        raise ValueError("choices must be binary (0/1).")
+
+    # Aggregate by unique intensity levels
+    x_levels, inv = np.unique(stimuli, return_inverse=True)
+    order = np.argsort(x_levels)
+    x_levels = x_levels[order]
+    inv = order[inv]  # remap to sorted order indices
+
+    n = np.bincount(inv)
+    k = np.bincount(inv, weights=choices).astype(float)
+    if x_levels.size < 2:
+        raise ValueError("Need at least two distinct stimulus levels.")
+
+    p_hat = k / n
+
+    # Sampling variance (binomial), with smoothing to avoid var=0 at p=0 or 1
+    p_var = (k + smooth) / (n + 2.0 * smooth)
+    var_p = p_var * (1.0 - p_var) / n
+    w = 1.0 / np.maximum(var_p, eps)  # inverse-variance weights
+
+    # Nonparametric monotone psychometric using IV weights (uses ALL levels)
+    p_iso = _pav_isotonic(p_hat, w=w)
+
+    # If 0.5 not bracketed, PSE lies outside tested range
+    if np.all(p_iso < 0.5):
+        return float(np.inf)
+    if np.all(p_iso > 0.5):
+        return float(-np.inf)
+
+    # If there's a plateau exactly at 0.5, return its midpoint in x
+    eq = (p_iso == 0.5)
+    if np.any(eq):
+        xs = x_levels[eq]
+        return float(0.5 * (xs.min() + xs.max()))
+
+    # Find the crossing interval (monotone => should be unique)
+    # We find the first index i where p_iso[i] >= 0.5, then interpolate with i-1.
+    i_hi = int(np.argmax(p_iso >= 0.5))
+    i_lo = i_hi - 1
+    if i_lo < 0:
+        return float(-np.inf)
+
+    x0, x1 = x_levels[i_lo], x_levels[i_hi]
+    p0, p1 = p_iso[i_lo], p_iso[i_hi]
+    if p1 == p0:
+        return float(0.5 * (x0 + x1))
+
+    t = (0.5 - p0) / (p1 - p0)
+    bias = float(x0 + t * (x1 - x0))
+    return -bias
+
 
 
 def print_warnings(w):
