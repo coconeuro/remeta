@@ -154,7 +154,7 @@ class Configuration(ReprMixin):
     ## Type 2
 
     param_type2_noise: Parameter = field(
-        default=Parameter(enable=1, guess=0.1, bounds=(0.05, 2), grid_range=np.linspace(0.1, 1, 8), default=0.01),
+        default=Parameter(enable=1, guess=0.1, bounds=(0.001, 2), grid_range=np.linspace(0.01, 1, 8), default=0.01),
         metadata={'description': """ 
         Metacognitive noise. May characterize metacognitive noise of either a noisy-readout, noisy-report or 
         noisy-temperature model."""
