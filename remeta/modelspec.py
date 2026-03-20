@@ -5,7 +5,7 @@ from scipy.optimize import OptimizeResult
 from numdifftools import Hessian
 from scipy.stats import norm
 
-from .util import (TAB, SP2, Struct, ReprMixin, create_struct_with_reprmixin, spearman2d, pearson2d, listlike,
+from .util import (TAB, SP2, Struct, ReprMixin, Stats, spearman2d, pearson2d, listlike,
                    empty_list, print_class_instance, cov_from_hessian, se_from_cov, compute_criterion_bias,
                    compute_cov_criteria)
 
@@ -222,7 +222,7 @@ class Data(ReprMixin):
         self.nsubjects = None
         self.nsamples = None
 
-        self.stats = create_struct_with_reprmixin('Stats')
+        self.stats = Stats()
         self.stats_accuracy = None
         self.stats_dprime = None
         self.stats_choice_bias = None
