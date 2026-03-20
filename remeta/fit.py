@@ -246,8 +246,27 @@ def subject_estimation(fun, param_set, args=(), gridsearch=False, num_cores=1,
     # if verbosity:
     #     print(f'{TAB}{TAB}{TAB}.. local MLE finished ({fit_best.execution_time_local:.1f} secs).')
 
+    fit_best.hessian = None
+    success = False
+    for step in (None, 1e-5, 1e-4):
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter('error', RuntimeWarning)
+                if step is None:
+                    H = Hessian(fun)(fit_best.x)
+                else:
+                    H = Hessian(fun, step=step)(fit_best.x)
+                success = True
+                break
+        except RuntimeWarning as e:
+            pass
+    if not success:
+        return fit_best
 
-    H = Hessian(fun)(fit_best.x)
+    # try:
+    #     H = Hessian(fun)(fit_best.x)
+    # except Exception as e:
+    #     raise e
     H = 0.5 * (H + H.T)  # make sure it is not asymmetric due to numerical errors
     # Logic: if not singular and all_eigenvalues > 0
     # if not (singular := (np.linalg.cond(H) > 1 / np.finfo(H.dtype).eps) and np.all(np.diag(np.linalg.inv(H)) > 0):
