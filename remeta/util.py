@@ -30,9 +30,11 @@ class ReprMixin:
         return f'{self.__class__.__name__}\n' + '\n'.join([f'\t{k}: {v}' for k, v in self.__dict__.items()])
 
 
-def create_struct_with_reprmixin(class_name):
-    return type(class_name, (ReprMixin,), {})()
+# def create_struct_with_reprmixin(class_name):
+#     return type(class_name, (ReprMixin,), {})()
 
+class Stats(ReprMixin):
+    pass
 
 def print_class_instance(instance, attr_class_only=(), attr_replace_string=None):
     txt = f'{instance.__class__.__name__}'
