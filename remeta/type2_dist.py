@@ -125,11 +125,18 @@ def get_type2_dist(type2_dist, type2_center, type2_noise, type2_noise_type='repo
 
     elif type2_dist == 'beta_mode':
         # type2_center = mode, type2_noise != SD
-        type2_center = np.maximum(1e-5, np.minimum(1 - 1e-5, type2_center))
-        kappa = 2 + (type2_center * (1 - type2_center)) / (type2_noise ** 2)   # concentration/precision (>2)
-        a = 1 + type2_center * (kappa - 2)
-        b = 1 + (1 - type2_center) * (kappa - 2)
-        dist = beta(loc=0, a=a, b=b, scale=1)
+        # type2_center = np.maximum(1e-5, np.minimum(1 - 1e-5, type2_center))
+        # kappa = 2 + (type2_center * (1 - type2_center)) / (type2_noise ** 2)   # concentration/precision (>2)
+        # a = 1 + type2_center * (kappa - 2)
+        # b = 1 + (1 - type2_center) * (kappa - 2)
+        # dist = beta(loc=0, a=a, b=b, scale=1)
+
+        c = np.clip(type2_center, 1e-5, 1 - 1e-5)
+        s = 1 / (type2_noise ** 2)  # concentration / sharpness
+        a = 1 + s * c
+        b = 1 + s * (1 - c)
+        dist = beta(a=a, b=b, loc=0, scale=1)
+
     elif type2_dist == 'betaprime_mean_std':
         # type2_center = mean, type2_noise = SD
         b = 2 + (type2_center * (type2_center + 1)) / type2_noise ** 2
