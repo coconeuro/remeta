@@ -542,8 +542,9 @@ def plot_stimulus_versus_confidence(
         for i, (k, v) in enumerate(params.items()):
             if k.startswith('type2_'):
                 if listlike(v):
-                    val = ', '.join([fmp(p) for p in v])
-                    anot_type2 += [f"${symbols[k][1:-1]}=" + f"[{val}]$"]
+                    entries = [fmp(p) for p in v]
+                    val_break = ",$\n$".join(", ".join(entries[i:i+3]) for i in range(0, len(entries), 3))
+                    anot_type2 += [f"${symbols[k][1:-1]}=" + f"[{val_break}]$"]
                 else:
                     anot_type2 += [f"${symbols[k][1:-1]}={fmp(v)}$"]
         plt.text(1.045, 0.1-0.2*separate_by_accuracy, r'Type 2 parameters:' + '\n' + '\n'.join(anot_type2), transform=ax.transAxes,
@@ -799,8 +800,9 @@ def plot_confidence_histogram(
         for i, (k, v) in enumerate(params.items()):
             if k.startswith('type2_'):
                 if listlike(v):
-                    val = ', '.join([fmp(p) for p in v])
-                    anot_type2 += [f"${symbols[k][1:-1]}=" + f"[{val}]$"]
+                    entries = [fmp(p) for p in v]
+                    val_break = ",$\n$".join(", ".join(entries[i:i+3]) for i in range(0, len(entries), 3))
+                    anot_type2 += [f"${symbols[k][1:-1]}=" + f"[{val_break}]$"]
                 else:
                     anot_type2 += [f"${symbols[k][1:-1]}={fmp(v)}$"]
         plt.text(1.055, 0.1-0.2*(separate_by_accuracy | separate_by_category), r'Type 2 parameters:' + '\n' + '\n'.join(anot_type2), transform=ax.transAxes,
