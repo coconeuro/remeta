@@ -692,13 +692,14 @@ def check_linearity(stimuli, choices, difficulty_levels=None, method=None, verbo
         choices[choices == choice_ids[0]] = 0
         choices[choices == choice_ids[1]] = 1
     accuracy = (np.sign(stimuli) == np.sign(choices - 0.5)).astype(int)
-    increasing = np.polyfit(range(n_samples), accuracy,1)[0] > 0
+    increasing_orig = np.polyfit(range(n_levels), [accuracy[difficulty_levels == level].mean()
+                                                   for level in levels_orig],1)[0] > 0
 
     import remeta
     cfg = remeta.Configuration()
     cfg.param_type1_noise.bounds[1] = np.inf
     rem_orig = remeta.ReMeta(cfg)
-    if increasing:
+    if increasing_orig:
         stimuli_orig = stimuli * difficulty_levels
         rem_orig.fit_type1(stimuli_orig / stimuli_orig.max(), choices, verbosity=verbosity, silence_warnings=True)
         result_orig = rem_orig.summary()
@@ -712,8 +713,8 @@ def check_linearity(stimuli, choices, difficulty_levels=None, method=None, verbo
     levels_linear = [np.abs(stimuli_linear[difficulty_levels == level])[0] for level in levels_orig]
 
     import matplotlib.pyplot as plt
-    plt.figure(figsize=(9 if increasing else 6, 3))
-    plt.subplot(1, 2+increasing, 1)
+    plt.figure(figsize=(9 if increasing_orig else 6, 3))
+    plt.subplot(1, 2+increasing_orig, 1)
     plt.plot([0, 1], [0, 1], 'k-', label='Perfect\nlinearity')
     plt.plot(levels_orig / np.max(levels_orig), levels_linear, label='Empirical')
     plt.xlabel('Evidence (original)', fontsize=13)
@@ -723,14 +724,14 @@ def check_linearity(stimuli, choices, difficulty_levels=None, method=None, verbo
     # plt.title(title, fontsize=10)
     plt.legend(fontsize=8, handlelength=1)
 
-    if increasing:
-        ax = plt.subplot(1, 2+increasing, 2)
+    if increasing_orig:
+        ax = plt.subplot(1, 2+increasing_orig, 2)
         rem_orig.plot_psychometric(axis_mode=True)
         plt.text(0.05, 0.85, rf'$\sigma_1 = {result_orig.params["type1_noise"]:.3f}$',
                  bbox=dict(fc=[1, 1, 1], ec=[0.5, 0.5, 0.5], lw=1, pad=2), transform=ax.transAxes)
         plt.title(title_orig, fontsize=11)
 
-    ax = plt.subplot(1, 2+increasing, 2+increasing)
+    ax = plt.subplot(1, 2+increasing_orig, 2+increasing_orig)
     rem_linear.plot_psychometric(axis_mode=True)
     plt.title(title_linear, fontsize=11)
     plt.text(0.05, 0.85, rf'$\sigma_1 = {result_linear.params["type1_noise"]:.3f}$',
