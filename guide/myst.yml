@@ -17,6 +17,7 @@ project:
     - file: content/start.ipynb
     - file: content/type1.ipynb
     - file: content/type2.ipynb
+    - file: content/stimulus_evidence.ipynb
     - file: content/group_estimation_priors.ipynb
     - file: content/results.ipynb
     - file: content/configuration.ipynb
