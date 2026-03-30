@@ -99,7 +99,8 @@ class ReMeta:
 
         self.result = Summary(self.data, self.cfg)
 
-        self.fit_type1(verbosity=verbosity, store_final_results=self.cfg.skip_type2, silence_warnings=silence_warnings)
+        self.fit_type1(verbosity=verbosity, store_final_results=self.cfg.skip_type2, silence_warnings=silence_warnings,
+                       _called_from_fit=True)
 
         if not self.cfg.skip_type2:
             self.fit_type2(verbosity=verbosity, silence_warnings=silence_warnings)
@@ -114,7 +115,8 @@ class ReMeta:
         confidence: None | list[float] | list[list[float]]  | np.typing.NDArray[float] = None,
         store_final_results: bool = True,
         verbosity: int = 1,
-        silence_warnings: bool = False
+        silence_warnings: bool = False,
+        _called_from_fit: bool = False
     ):
         """
 
@@ -132,9 +134,10 @@ class ReMeta:
                 if followed by `fit_type2`.
             verbosity: verbosity level (possible values: 0, 1, 2)
             silence_warnings: if `True`, warnings during model fitting are supressed.
+            _called_from_fit: internal variable passed by self.fit()
         """
 
-        if self.data is None:
+        if self.data is None or not _called_from_fit:
             if stimuli is None or choices is None:
                 raise ValueError('If the data attribute of the ReMeta instance is None, at least stimuli '
                                  'and choices have to be passed to fits_type1_subject()')
