@@ -390,7 +390,7 @@ if __name__ == '__main__':
         # type2_evidence_bias=1.2
     )
     cfg = remeta.Configuration()
-    cfg.meta_noise_type = 'report'
+    cfg.type2_noise_type = 'report'
     cfg.param_type2_noise.model = 'beta_mode'
     cfg.param_type1_thresh.enable = 1
     cfg.param_type1_bias.enable = 1
