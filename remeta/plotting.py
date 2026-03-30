@@ -98,6 +98,9 @@ def plot_psychometric(
         model_only: bool = False,
         highlight_fit: bool = False,
         errorbars: bool = True,
+        max_levels_discrete: int = 10,
+        discretization: str = 'linear',
+        axis_mode: bool = False,
         path_export: str | None = None
 ) -> None:
     """Plot psychometric function.
@@ -137,6 +140,13 @@ def plot_psychometric(
         model_only: Show the model prediction only (auto-set to True if no data are passed)
         highlight_fit: Emphasize the fit over the data
         errorbars: Whether to include error bars for empirical data (SD)
+        max_levels_discrete: until `max_levels_discrete` evidence levels, plot data discretely
+        discretization:
+             In case of more than <max_levels_discrete> difficulty levels, anchor points are computed. To this aim, the
+             difficulty level dimension is divided in max_levels_discrete bins either linearly (discretization='linear')
+             or quantile-based (discretization='quantile').
+        axis_mode: if True, do not create a new matplotlib figure (allows for subplot integration in existing figures)
+        path_export: pass a file path to export a png figure
     """
 
     if type1_noise is not None or params is not None:
@@ -194,31 +204,57 @@ def plot_psychometric(
         posterior_pos = cdf(xrange_pos, type1_noise[1], type1_thresh[1], type1_bias[1])
 
 
-    fig = plt.figure(figsize=(6, 3.5))
-    fig.subplots_adjust(bottom=0.2)
-    gs = fig.add_gridspec(1, 2, width_ratios=[1, 0.5], wspace=0)
-    ax = fig.add_subplot(gs[0, 0])
-    ax_leg = fig.add_subplot(gs[0, 1])
-    ax_leg.axis("off")
-    plt.sca(ax)
+    if axis_mode:
+        ax = plt.gca()
+    else:
+        fig = plt.figure(figsize=(6, 3.5))
+        fig.subplots_adjust(bottom=0.2)
+        gs = fig.add_gridspec(1, 2, width_ratios=[1, 0.5], wspace=0)
+        ax = fig.add_subplot(gs[0, 0])
+        ax_leg = fig.add_subplot(gs[0, 1])
+        ax_leg.axis("off")
+        plt.sca(ax)
 
 
     if not model_only:
         stimulus_ids = (stimuli > 0).astype(int)
-        levels = np.unique(stimuli)
-        choiceprob_neg = np.array([np.mean(choices[(stimuli == v) & (stimulus_ids == 0)] ==
-                                           stimulus_ids[(stimuli == v) & (stimulus_ids == 0)])
-                                   for v in levels[levels < 0]])
-        choiceprob_pos = np.array([np.mean(choices[(stimuli == v) & (stimulus_ids == 1)] ==
-                                           stimulus_ids[(stimuli == v) & (stimulus_ids == 1)])
-                                   for v in levels[levels > 0]])
+        levels = np.sort(np.unique(stimuli))
+        if len(levels) > max_levels_discrete*2:
+            if discretization == 'linear':
+                edges_neg = np.linspace(np.min(levels[levels < 0]), np.max(levels[levels < 0]), max_levels_discrete + 1)
+                edges_pos = np.linspace(np.min(levels[levels > 0]), np.max(levels[levels > 0]), max_levels_discrete + 1)
+            elif discretization == 'quantile':
+                edges_neg = np.quantile(levels[levels < 0], np.linspace(0, 1, max_levels_discrete + 1))
+                edges_pos = np.quantile(levels[levels > 0], np.linspace(0, 1, max_levels_discrete + 1))
+            centers_neg = edges_neg[:-1] + np.diff(edges_neg) / 2
+            centers_pos = edges_pos[:-1] + np.diff(edges_pos) / 2
+            stimuli_discrete = np.empty_like(stimuli)
+            stimuli_discrete[stimuli < 0] = np.digitize(stimuli[stimuli < 0], edges_neg + np.hstack((-1, np.zeros(len(edges_neg) - 2), 1))) - max_levels_discrete - 1
+            stimuli_discrete[stimuli > 0] = np.digitize(stimuli[stimuli > 0], edges_pos + np.hstack((-1e-8, np.zeros(len(edges_pos) - 2), 1e-8)))
+            levels_neg = np.sort(np.unique(stimuli_discrete[stimuli < 0]))
+            levels_pos = np.sort(np.unique(stimuli_discrete[stimuli > 0]))
+            mask_neg = [stimuli_discrete == level for level in levels_neg]
+            mask_pos = [stimuli_discrete == level for level in levels_pos]
+            levels = np.hstack(([centers_neg[int(max_levels_discrete + v)] for v in levels_neg],
+                                [centers_pos[int(v) - 1] for v in levels_pos]))
+        else:
+            mask_neg = [stimuli == level for level in levels[levels < 0]]
+            mask_pos = [stimuli == level for level in levels[levels > 0]]
+        choiceprob_neg = np.array([np.mean(choices[mask & (stimulus_ids == 0)] ==
+                                           stimulus_ids[mask & (stimulus_ids == 0)])
+                                   for mask in mask_neg])
+        choiceprob_pos = np.array([np.mean(choices[mask & (stimulus_ids == 1)] ==
+                                           stimulus_ids[mask & (stimulus_ids == 1)])
+                                   for mask in mask_pos])
         if errorbars:
-            choiceprob_neg_se = np.array([sem(choices[(stimuli == v) & (stimulus_ids == 0)] ==
-                                               stimulus_ids[(stimuli == v) & (stimulus_ids == 0)])
-                                       for v in levels[levels < 0]])
-            choiceprob_pos_se = np.array([sem(choices[(stimuli == v) & (stimulus_ids == 1)] ==
-                                               stimulus_ids[(stimuli == v) & (stimulus_ids == 1)])
-                                       for v in levels[levels > 0]])
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', category=RuntimeWarning)
+                choiceprob_neg_se = np.array([sem(choices[mask & (stimulus_ids == 0)] ==
+                                                   stimulus_ids[mask & (stimulus_ids == 0)])
+                                           for mask in mask_neg])
+                choiceprob_pos_se = np.array([sem(choices[mask & (stimulus_ids == 1)] ==
+                                                   stimulus_ids[mask & (stimulus_ids == 1)])
+                                           for mask in mask_pos])
         else:
             choiceprob_neg_se, choiceprob_pos_se = np.nan, np.nan
         plt.errorbar(levels[levels < 0], 1-choiceprob_neg, yerr=choiceprob_neg_se, fmt='o', color=color_data, mec='k', ls='' if model_prediction else '-',
@@ -244,7 +280,7 @@ def plot_psychometric(
     plt.ylabel('Choice probability $S^+$')
     ax.xaxis.set_major_formatter(FormatStrFormatter('%.2g'))
 
-    if model_prediction:
+    if model_prediction and not axis_mode:
         anot_type1 = []
         for i, (k, v) in enumerate(params.items()):
             # if (cfg is None and k in params) or (cfg is not None and getattr(cfg, f"enable_param_{k}")) and k.startswith('type1_'):
@@ -256,10 +292,12 @@ def plot_psychometric(
                     anot_type1 += [f"${symbols[k][1:-1]}={fmp(v)}$"]
         plt.text(1.045, 0.1, r'Parameters:' + '\n' + '\n'.join(anot_type1), transform=ax.transAxes,
                  bbox=dict(fc=[1, 1, 1], ec=[0.5, 0.5, 0.5], lw=1, pad=5), fontsize=11)
-    set_fontsize(label='default', tick='default')
 
-    # ax_leg.legend(bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=11, handlelength=1)
-    ax_leg.legend(*ax.get_legend_handles_labels(), loc="upper left", fontsize=11, handlelength=1)
+    if not axis_mode:
+        # ax_leg.legend(bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=11, handlelength=1)
+        ax_leg.legend(*ax.get_legend_handles_labels(), loc="upper left", fontsize=11, handlelength=1)
+
+    set_fontsize(label='default', tick='default')
 
     if path_export is not None:
         plt.savefig(path_export, bbox_inches='tight', pad_inches=0.02)
@@ -285,6 +323,7 @@ def plot_stimulus_versus_confidence(
         model_prediction_nsamples: int = 10000,
         model_only: bool = False,
         model_prediction_disable_type2_noise: bool = False,
+        axis_mode: bool = False,
         path_export: str | None = None
 ) -> None:
     """ Plot the relationship between stimulus levels and confidence.
@@ -330,6 +369,8 @@ def plot_stimulus_versus_confidence(
         model_prediction_nsamples: number of samples used to generate model predictions
         model_only: Show the model prediction only (auto-set to True if no data are passed)
         model_prediction_disable_type2_noise: plot model prediction with ~0 metacognitive noise
+        axis_mode: if True, do not create a new matplotlib figure (allows for subplot integration in existing figures)
+        path_export: pass a file path to export a png figure
     """
 
     if stimuli_or_simulation is not None and confidence is None:  # assume first parameter is a simulated dataset
@@ -375,13 +416,16 @@ def plot_stimulus_versus_confidence(
     if probability_correct:
         confidence = (confidence + 1) / 2
 
-    fig = plt.figure(figsize=(6, 3.5))
-    fig.subplots_adjust(bottom=0.2)
-    gs = fig.add_gridspec(1, 2, width_ratios=[1, 0.5], wspace=0)
-    ax = fig.add_subplot(gs[0, 0])
-    ax_leg = fig.add_subplot(gs[0, 1])
-    ax_leg.axis("off")
-    plt.sca(ax)
+    if axis_mode:
+        ax = plt.gca()
+    else:
+        fig = plt.figure(figsize=(6, 3.5))
+        fig.subplots_adjust(bottom=0.2)
+        gs = fig.add_gridspec(1, 2, width_ratios=[1, 0.5], wspace=0)
+        ax = fig.add_subplot(gs[0, 0])
+        ax_leg = fig.add_subplot(gs[0, 1])
+        ax_leg.axis("off")
+        plt.sca(ax)
     ax.xaxis.set_major_formatter(FormatStrFormatter('%.2g'))
 
     if stim_max is None:
@@ -537,21 +581,23 @@ def plot_stimulus_versus_confidence(
     plt.xlabel('Stimulus ($x$)')
     plt.ylabel('Subjective prob. correct' if probability_correct else 'Confidence ($C$)')
 
-    if model_prediction:
-        anot_type2 = []
-        for i, (k, v) in enumerate(params.items()):
-            if k.startswith('type2_'):
-                if listlike(v):
-                    entries = [fmp(p) for p in v]
-                    val_break = ",$\n$".join(", ".join(entries[i:i+3]) for i in range(0, len(entries), 3))
-                    anot_type2 += [f"${symbols[k][1:-1]}=" + f"[{val_break}]$"]
-                else:
-                    anot_type2 += [f"${symbols[k][1:-1]}={fmp(v)}$"]
-        plt.text(1.045, 0.1-0.2*separate_by_accuracy, r'Type 2 parameters:' + '\n' + '\n'.join(anot_type2), transform=ax.transAxes,
-                 bbox=dict(fc=[1, 1, 1], ec=[0.5, 0.5, 0.5], lw=1, pad=5), fontsize=11)
+    if not axis_mode:
+        if model_prediction:
+            anot_type2 = []
+            for i, (k, v) in enumerate(params.items()):
+                if k.startswith('type2_'):
+                    if listlike(v):
+                        entries = [fmp(p) for p in v]
+                        val_break = ",$\n$".join(", ".join(entries[i:i+3]) for i in range(0, len(entries), 3))
+                        anot_type2 += [f"${symbols[k][1:-1]}=" + f"[{val_break}]$"]
+                    else:
+                        anot_type2 += [f"${symbols[k][1:-1]}={fmp(v)}$"]
+            plt.text(1.045, 0.1-0.2*separate_by_accuracy, r'Type 2 parameters:' + '\n' + '\n'.join(anot_type2), transform=ax.transAxes,
+                     bbox=dict(fc=[1, 1, 1], ec=[0.5, 0.5, 0.5], lw=1, pad=5), fontsize=11)
 
-    # plt.legend(bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=11, handlelength=1)
-    ax_leg.legend(*ax.get_legend_handles_labels(), loc="upper left", fontsize=11, handlelength=1)
+
+        # plt.legend(bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=11, handlelength=1)
+        ax_leg.legend(*ax.get_legend_handles_labels(), loc="upper left", fontsize=11, handlelength=1)
 
     set_fontsize(label='default', tick='default')
     if path_export is not None:
@@ -579,6 +625,7 @@ def plot_confidence_histogram(
         separate_by_category: bool = False,
         separate_by_accuracy: bool = False,
         model_prediction_nsamples: int = 10000,
+        axis_mode: bool = False,
         path_export: str | None = None
 ) -> None:
     """ Plot the relationship between stimulus levels and confidence.
@@ -625,6 +672,8 @@ def plot_confidence_histogram(
         separate_by_category: separate histograms for the two stimulus categories
         separate_by_accuracy: separate histograms for correct and incorrect responses
         model_prediction_nsamples: number of samples used to generate model predictions
+        axis_mode: if True, do not create a new matplotlib figure (allows for subplot integration in existing figures)
+        path_export: pass a file path to export a png figure
     """
 
     if separate_by_accuracy:
@@ -678,13 +727,16 @@ def plot_confidence_histogram(
     if stim_max is None:
         stim_max = 1 if stimuli is None else np.max(np.abs(stimuli))
 
-    fig = plt.figure(figsize=(6, 3.5))
-    fig.subplots_adjust(bottom=0.2)
-    gs = fig.add_gridspec(1, 2, width_ratios=[1, 0.5], wspace=0)
-    ax = fig.add_subplot(gs[0, 0])
-    ax_leg = fig.add_subplot(gs[0, 1])
-    ax_leg.axis("off")
-    plt.sca(ax)
+    if axis_mode:
+        ax = plt.gca()
+    else:
+        fig = plt.figure(figsize=(6, 3.5))
+        fig.subplots_adjust(bottom=0.2)
+        gs = fig.add_gridspec(1, 2, width_ratios=[1, 0.5], wspace=0)
+        ax = fig.add_subplot(gs[0, 0])
+        ax_leg = fig.add_subplot(gs[0, 1])
+        ax_leg.axis("off")
+        plt.sca(ax)
     ax.xaxis.set_major_formatter(FormatStrFormatter('%.3g'))
 
     if not model_only:
@@ -794,22 +846,23 @@ def plot_confidence_histogram(
     plt.ylabel('Probability' if model_only else 'Count')
     plt.xlim(0, 1)
 
-    if model_prediction:
-        anot_type2 = []
-        cfg = None  # keep in case cfg is implemented in the future
-        for i, (k, v) in enumerate(params.items()):
-            if k.startswith('type2_'):
-                if listlike(v):
-                    entries = [fmp(p) for p in v]
-                    val_break = ",$\n$".join(", ".join(entries[i:i+3]) for i in range(0, len(entries), 3))
-                    anot_type2 += [f"${symbols[k][1:-1]}=" + f"[{val_break}]$"]
-                else:
-                    anot_type2 += [f"${symbols[k][1:-1]}={fmp(v)}$"]
-        plt.text(1.055, 0.1-0.2*(separate_by_accuracy | separate_by_category), r'Type 2 parameters:' + '\n' + '\n'.join(anot_type2), transform=ax.transAxes,
-                 bbox=dict(fc=[1, 1, 1], ec=[0.5, 0.5, 0.5], lw=1, pad=5), fontsize=11)
+    if not axis_mode:
+        if model_prediction:
+            anot_type2 = []
+            cfg = None  # keep in case cfg is implemented in the future
+            for i, (k, v) in enumerate(params.items()):
+                if k.startswith('type2_'):
+                    if listlike(v):
+                        entries = [fmp(p) for p in v]
+                        val_break = ",$\n$".join(", ".join(entries[i:i+3]) for i in range(0, len(entries), 3))
+                        anot_type2 += [f"${symbols[k][1:-1]}=" + f"[{val_break}]$"]
+                    else:
+                        anot_type2 += [f"${symbols[k][1:-1]}={fmp(v)}$"]
+            plt.text(1.055, 0.1-0.2*(separate_by_accuracy | separate_by_category), r'Type 2 parameters:' + '\n' + '\n'.join(anot_type2), transform=ax.transAxes,
+                     bbox=dict(fc=[1, 1, 1], ec=[0.5, 0.5, 0.5], lw=1, pad=5), fontsize=11)
 
-    # plt.legend(bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=11, handlelength=1)
-    ax_leg.legend(*ax.get_legend_handles_labels(), loc="upper left", fontsize=11, handlelength=1)
+        # plt.legend(bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=11, handlelength=1)
+        ax_leg.legend(*ax.get_legend_handles_labels(), loc="upper left", fontsize=11, handlelength=1)
 
     set_fontsize(label='default', tick='default')
 
