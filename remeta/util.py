@@ -631,6 +631,380 @@ def discretize_confidence_with_bounds(x, bounds):
         confidence[(bounds[i] <= x) & (x < bounds[i + 1])] = i + 1
     return confidence
 
+
+def check_linearity(stimuli, choices, difficulty_levels=None, method=None, verbosity=0, **kwargs):
+
+    """
+    The `stimuli` variable passed to ReMeta should encode stimulus evidence *in interval scale*. Interval scale means
+    that 1) identical increments of the stimulus variable anywhere along the stimulus axis should correspond to
+    identical increments in evidence; and 2), the value 0 should indicate the absence of any evidence. This helper
+    method helps visualize the linearity of the current data.
+
+    It is recommended to do linearization on the entire group data and thus also to pass stimuli, choices (and
+    optionally difficulty_levels) as flattened 1d group arrays or n_subjects x n_trials 2d arrays.
+
+    Args:
+        stimuli: 1d (n_samples) or 2d (n_subjects x n_samples) stimulus array
+            It is recommended to use the data of the entire group!
+            If stimuli is binary, difficulty_levels must be passed, otherwise the absolute value
+            is assumed to encode difficulty / stimulus magnitude.
+        choices: 1d (n_samples) or 2d (n_subjects x n_samples) choice array.
+            It is recommended to use the data of the entire group!
+            Choices must be encoded as 0/1 or -1/+1.
+        difficulty_levels: 1d (n_samples) or 2d (n_subjects x n_samples) difficulty level array
+            It is recommended to use the data of the entire group!
+            Must be passed if the stimuli array is binary. Should encode difficulty or stimulus magnitude.
+        method: method used for the call to `remeta.linearize_stimulus_evidence()`.
+            It is recommended to keep this at None.
+            None sets method='exact' if at most 10 difficulty levels and >=200 samples per difficulty level;
+            otherwise method='discretize_linear'.
+        verbosity: verbosity level passed to fit_type1() and linearize_stimulus_evidence()
+        kwargs: parameters passed to linearize_stimulus_evidence()
+    """
+
+    stim_ids = sorted(np.unique(stimuli))
+
+    if difficulty_levels is None:
+        if len(stim_ids) <= 2:
+            raise ValueError('Stimulus variable seems binary and no difficulty levels passed -> cannot compute gradual '
+                             'stimulus values')
+        difficulty_levels = np.abs(stimuli)
+        stimuli = np.sign(stimuli)
+    else:
+        if len(stim_ids) > 2:
+            raise ValueError('Stimuli should have exactly two values')
+        if (stim_ids[0] != -1) or (stim_ids[1] != 1):
+            warnings.warn('Stimuli are not in a -1/+1 format. Hence, the smaller stimulus value is converted to'
+                          '-1 and the larger to +1.')
+            stimuli[stimuli == stim_ids[0]] = -1
+            stimuli[stimuli == stim_ids[1]] = 1
+
+    levels_orig = np.sort(np.unique(difficulty_levels))
+    n_levels = len(levels_orig)
+    n_samples = len(stimuli)
+
+    if method is None:
+        method = 'exact' if (n_levels <= 10) and (n_samples / n_levels >= 200) else 'discretize_linear'
+    stimuli_linear = linearize_stimulus_evidence(stimuli, choices, difficulty_levels, method=method,
+                                                 verbosity=verbosity, **kwargs)
+
+    if (choice_ids := tuple(sorted(np.unique(choices)))) != (0, 1):
+        choices[choices == choice_ids[0]] = 0
+        choices[choices == choice_ids[1]] = 1
+    accuracy = (np.sign(stimuli) == np.sign(choices - 0.5)).astype(int)
+    increasing = np.polyfit(range(n_samples), accuracy,1)[0] > 0
+
+    import remeta
+    cfg = remeta.Configuration()
+    cfg.param_type1_noise.bounds[1] = np.inf
+    rem_orig = remeta.ReMeta(cfg)
+    if increasing:
+        stimuli_orig = stimuli * difficulty_levels
+        rem_orig.fit_type1(stimuli_orig / stimuli_orig.max(), choices, verbosity=verbosity, silence_warnings=True)
+        result_orig = rem_orig.summary()
+        title_orig = rf'Original: $\text{{AIC}} = {result_orig.summary().type1.aic:.1f}$'
+
+    rem_linear = remeta.ReMeta(cfg)
+    rem_linear.fit_type1(stimuli_linear, choices, verbosity=verbosity, silence_warnings=True)
+    result_linear = rem_linear.summary()
+    title_linear = rf'Linearized: $\text{{AIC}} = {result_linear.summary().type1.aic:.1f}$'
+
+    levels_linear = [np.abs(stimuli_linear[difficulty_levels == level])[0] for level in levels_orig]
+
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(9 if increasing else 6, 3))
+    plt.subplot(1, 2+increasing, 1)
+    plt.plot([0, 1], [0, 1], 'k-', label='Perfect\nlinearity')
+    plt.plot(levels_orig / np.max(levels_orig), levels_linear, label='Empirical')
+    plt.xlabel('Evidence (original)', fontsize=13)
+    plt.ylabel('Evidence (linearized)', fontsize=13)
+    plt.xlim(0, 1)
+    plt.ylim(0, 1)
+    # plt.title(title, fontsize=10)
+    plt.legend(fontsize=8, handlelength=1)
+
+    if increasing:
+        ax = plt.subplot(1, 2+increasing, 2)
+        rem_orig.plot_psychometric(axis_mode=True)
+        plt.text(0.05, 0.85, rf'$\sigma_1 = {result_orig.params["type1_noise"]:.3f}$',
+                 bbox=dict(fc=[1, 1, 1], ec=[0.5, 0.5, 0.5], lw=1, pad=2), transform=ax.transAxes)
+        plt.title(title_orig, fontsize=11)
+
+    ax = plt.subplot(1, 2+increasing, 2+increasing)
+    rem_linear.plot_psychometric(axis_mode=True)
+    plt.title(title_linear, fontsize=11)
+    plt.text(0.05, 0.85, rf'$\sigma_1 = {result_linear.params["type1_noise"]:.3f}$',
+             bbox=dict(fc=[1, 1, 1], ec=[0.5, 0.5, 0.5], lw=1, pad=2), transform=ax.transAxes)
+
+    plt.tight_layout()
+
+
+def linearize_stimulus_evidence(stimuli, choices, difficulty_levels=None, method='auto',
+                                rolling_size='auto', rolling_auto_nsamples=200, discretize_nlevels=10,
+                                noise_model='normal', force_monotonic=True, type1_noise_bounds=(0.001, np.inf),
+                                verbosity=1):
+    """
+    Linearize stimulus evidence. The `stimuli` variable passed to ReMeta should encode stimulus evidence *in interval
+    scale*. Interval scale means that 1) identical increments of the stimulus variable anywhere along the stimulus axis
+    should correspond to identical increments in evidence; and 2), the value 0 should indicate the absence of any
+    evidence. This helper method transforms stimuli to interval-scale (signed) stimulus evidence.
+
+    To check if linearization is necessary, use the helper method remeta.check_linearity().
+    When *not* to use:
+        If stimulus magnitude (i.e. |stimuli|) already encodes a signal-to-noise ratio, or if the stimulus "noise
+        denominator" is constant and stimulus magnitude mainly encodes a continuous numerator (e.g., offset angle from a
+        reference, motion coherence in percent)
+    In all other cases it is sensible to linearize the input.
+
+    It is recommended to perform linearization on the entire group data. To this aim, stimuli, choices (and optionally
+    difficulty_levels) can be passed as flattened 1d arrays or n_subjects x n_trials 2d arrays. The idea is that
+    non-linearity is mainly a property of the stimuli and the general architecture of the human brain, and less of
+    individual participants. Moreover, only when linearizing stimuli in an identical manner for the entire group,
+    type 1 parameters can be meaningfully compared between participants.
+
+    The present linearization method estimates type 1 noise (sigma_1) along the stimulus magnitude dimension while
+    setting the "signal" to 1 in each case. The original stimuli are then transformed to a signed signal-to-noise ratio
+    in the form 1/sigma_1.
+
+    Args:
+        stimuli: 1d (n_samples) or 2d (n_subjects x n_samples) stimulus array
+            It is recommended to use the data of the entire group!
+            If stimuli is binary, difficulty_levels must be passed, otherwise the absolute value
+            is assumed to encode difficulty / stimulus magnitude.
+        choices: 1d (n_samples) or 2d (n_subjects x n_samples) choice array.
+            It is recommended to use the data of the entire group!
+            Choices must be encoded as 0/1 or -1/+1.
+        difficulty_levels: 1d (n_samples) or 2d (n_subjects x n_samples) difficulty level array
+            It is recommended to use the data of the entire group!
+            Must be passed if the stimuli array is binary. Should encode difficulty or stimulus magnitude.
+        method: 'auto', 'exact', 'rolling', 'discretize_linear' or 'discretize_quantile'
+             'auto': 'exact' if at most 10 difficulty levels and >=200 samples per difficulty level; else 'rolling'.
+             'exact': process each difficulty level separately (recommended if each difficulty level has >=200 samples)
+             'rolling': Linearization is performed within a rolling window of size `rolling_size`.
+             'discretize_linear'/'discretize_quantile': The difficulty dimension is divided in `max_levels_discrete`
+             bins either in a linear (equidistant) or a quantile-based (equinumerous) manner; linearization is
+             performed for each bin, although some within-bin differentiation is maintained by means of subsequent
+             inter/extrapolation.
+        rolling_size: Window size for discretization 'rolling'. In case of 'auto', the window is chosen such that there
+                      are around `rolling_auto_nsamples` samples within a window.
+        rolling_auto_nsamples: Sample size for discretization 'rolling' and rolling_size 'auto'. Windows size is
+                               adaptively chosen such that the sample size for each fit is at least
+                               `rolling_auto_nsamples`.
+        discretize_nlevels: Number of difficulty bins for methods 'auto' / 'discretize_linear' / 'discretize_quantile'.
+        noise_model: 'normal' (default) or 'logistic'
+            Noise model used for linearization.
+        force_monotonic:
+            Enforce monotonicity via np.maximum.accumulate / np.minimum.accumulate.
+            Only necessary in case of a monotonicity violation. Set False to detect such a violation.
+
+    Returns:
+        stimuli_linear: Linerarized stimulus array, normalized to [-1; 1].
+
+    """
+    stim_ids = sorted(np.unique(stimuli))
+
+    if difficulty_levels is None:
+        if len(stim_ids) <= 2:
+            raise ValueError('Stimulus variable seems binary and no difficulty levels passed -> cannot compute gradual '
+                             'stimulus values')
+        difficulty_levels = np.abs(stimuli)
+        stimuli = np.sign(stimuli)
+    else:
+        if len(stim_ids) > 2:
+            raise ValueError('Stimuli should have exactly two values')
+        if (stim_ids[0] != -1) or (stim_ids[1] != 1):
+            warnings.warn('Stimuli are not in a -1/+1 format. Hence, the smaller stimulus value is converted to'
+                          '-1 and the larger to +1.')
+            stimuli[stimuli == stim_ids[0]] = -1
+            stimuli[stimuli == stim_ids[1]] = 1
+
+    levels = np.sort(np.unique(difficulty_levels))
+
+    n_levels = len(levels)
+    n_samples = len(stimuli)
+
+    if method == 'auto':
+        method = 'exact' if (n_levels <= 10) and (n_samples / n_levels >= 200) else 'rolling'
+    if method == 'exact':
+        difficulty_levels_final = difficulty_levels
+        levels_final = levels
+        if verbosity:
+            print(f'Samples per difficulty level:')
+            for i, level in enumerate(levels_final):
+                print(f'\tLevel {i + 1} [{level:.4g}]: {np.sum(difficulty_levels_final == level)} samples')
+    else:
+        if method == 'rolling':
+            from scipy.stats import rankdata
+            difficulty_levels_final = rankdata(difficulty_levels, method='dense') - 1
+            levels_final = levels
+        else:
+            if method == 'discretize_linear':
+                edges = np.linspace(np.min(levels), np.max(levels), discretize_nlevels + 1)
+            elif method == 'discretize_quantile':
+                edges = np.quantile(levels, np.linspace(0, 1, discretize_nlevels + 1))
+            centers = edges[:-1] + np.diff(edges) / 2
+            difficulty_levels_final = np.digitize(difficulty_levels, edges + np.hstack((-1, np.zeros(len(edges) - 2), 1)))
+            levels_final = np.linspace(1, discretize_nlevels, discretize_nlevels).astype(int)
+            if verbosity:
+                print(f'Samples per difficulty level:')
+                for i, level in enumerate(levels_final):
+                    print(f'\tLevel {i + 1} [Center {centers[i]:.4g}]: {np.sum(difficulty_levels_final == level)} samples')
+
+    stimuli_new = np.zeros_like(stimuli, dtype=float)
+    params = np.full(len(levels_final), np.nan)
+    import remeta
+    cfg = remeta.Configuration()
+    cfg.param_type1_noise.model = noise_model
+    cfg.param_type1_noise.bounds = list(type1_noise_bounds)
+    rem = remeta.ReMeta(cfg)
+    if method == 'rolling':
+        for i in range(len(levels_final)):
+            if (verbosity == 2) and (np.mod(i + 1, 100) == 0):
+                print(f'Computing rolling window {i + 1} / {n_levels}')
+            j = 0
+            if rolling_size == 'auto':
+                while True:
+                    if (np.sum(np.isin(difficulty_levels_final, range(max(0, i - j), min(n_levels, i + j + 1))))
+                            >= rolling_auto_nsamples):
+                        break
+                    if j > n_levels:
+                        raise ValueError('Two few samples for method `rolling`.')
+                    j += 1
+                cnd = np.isin(difficulty_levels_final, range(max(0, i - j), min(n_levels, i + j + 1)))
+            else:
+                left = (rolling_size - 1) // 2
+                start = min(max(0, i - left), n_levels - rolling_size)
+                stop = start + rolling_size
+                cnd = np.isin(difficulty_levels_final, range(start, stop))
+            rem.fit_type1(
+                stimuli[cnd].flatten(),
+                choices[cnd].flatten(),
+                verbosity=0,
+                silence_warnings=True
+            )
+            params[i] = rem.summary().params['type1_noise']
+        params = fit_monotone_smooth(params, sigma=n_levels/10)
+    else:
+        for i, level in enumerate(levels_final):
+            if len(stimuli[difficulty_levels_final == level]):
+                rem.fit_type1(
+                    stimuli[difficulty_levels_final == level].flatten(),
+                    choices[difficulty_levels_final == level].flatten(),
+                    verbosity=0,
+                    silence_warnings=True
+                )
+                params[i] = rem.summary().params['type1_noise']
+
+    valid = ~np.isnan(params)
+    params_delta = np.diff(params[valid])
+    is_monotonic = np.all(params_delta >= 0) or np.all(params_delta <= 0)
+    decreasing = np.polyfit(range(len(params[valid])), params[valid],1)[0] < 0  # in general, higher magnitue = lower type1_noise
+    if not is_monotonic:
+        if not force_monotonic:
+            raise ValueError('Sensitivity does not increase or decrease monotonically. Check your difficulty levels, '
+                             'reduce max_levels_discrete or pass force_monotonic=True')
+        else:
+            # warnings.warn('Sensitivity does not increase or decrease monotonically. Enforcing monotonicity as per '
+            #               'force_monotonic=True.')
+            params[valid] = np.minimum.accumulate(params[valid]) if decreasing else np.maximum.accumulate(params[valid])
+    if method == 'exact':
+        for i, level in enumerate(levels_final):
+            if valid[i]:
+                stimuli_new[difficulty_levels_final == level] = stimuli[difficulty_levels_final == level] / params[i]
+            elif len(stimuli[difficulty_levels_final == level]):
+                raise ValueError('This should not happen.')
+    else:
+        if method == 'rolling':
+            stimuli_new = np.full(stimuli.shape, fill_value=np.nan)
+            for i in range(n_levels):
+                cnd = difficulty_levels_final == i
+                stimuli_new[cnd] = stimuli[cnd] / params[i]
+        else:
+            stimuli_new = stimuli * pchip_interp_monotone_extrap(centers[valid], 1 / params[valid], difficulty_levels)
+
+    stimuli_linear = stimuli_new / np.max(np.abs(stimuli_new))
+
+    if verbosity:
+        result_old = None
+        if decreasing:
+            stimuli_old = stimuli * difficulty_levels
+            rem.fit_type1(stimuli_old / stimuli_old.max(), choices, verbosity=0, silence_warnings=True)
+            result_old = rem.summary()
+            print(f'Before: type1_noise = {result_old.params["type1_noise"]:.4f}, AIC = {result_old.summary().type1.aic:.1f}')
+
+        else:
+            print(f'Before: <unavailable, as difficulty levels are coded inversely to stimulus magnitude>')
+
+        rem.fit_type1(stimuli_linear, choices, verbosity=0, silence_warnings=True)
+        result_new = rem.summary()
+        print(f'After: type1_noise = {result_new.params["type1_noise"]:.4f}, AIC = {result_new.summary().type1.aic:.1f}')
+
+        if result_old is not None:
+            if result_new.summary().type1.aic < result_old.summary().type1.aic:
+                print(f'\t-> Linearization improves the model fit.')
+            else:
+                warnings.warn(f'\t-> Linearization impairs the model fit. This is unexpected and might indicate '
+                              f'incorrect usage of the linearization method.')
+
+    return stimuli_linear
+
+
+def fit_monotone_smooth(y, sigma=2):
+    """
+    Return a smooth, monotonic fit to a 1D array.
+
+    Parameters
+    ----------
+    y : array-like
+        1D data values.
+    sigma : float, default=2
+        Gaussian smoothing width. Larger = smoother.
+
+    Returns
+    -------
+    y_fit : ndarray
+        Smooth monotonic fitted values at the original points.
+    """
+
+    from sklearn.isotonic import IsotonicRegression
+    from scipy.ndimage import gaussian_filter1d
+
+    increasing = np.polyfit(range(len(y)), y, 1)[0] > 0
+
+    iso = IsotonicRegression(increasing=increasing, out_of_bounds="clip")
+    y_mono = iso.fit_transform(np.arange(len(y)), y)
+
+    y_fit = gaussian_filter1d(y_mono, sigma=sigma, mode="nearest")
+
+    return y_fit
+
+
+def pchip_interp_monotone_extrap(xk, yk, xnew):
+
+    # PchipInterpolator for interpolation and boundary derivative for extrapolation
+    # Pchip = Piecewise cubic Hermite interpolation (preserves monotony)
+
+    from scipy.interpolate import PchipInterpolator
+
+    order = np.argsort(xk)
+    xk = xk[order]
+    yk = yk[order]
+
+    f = PchipInterpolator(xk, yk, extrapolate=False)
+    ynew = f(xnew)
+
+    left_slope = f.derivative()(xk[0])
+    right_slope = f.derivative()(xk[-1])
+
+    mask_left = xnew < xk[0]
+    mask_right = xnew > xk[-1]
+
+    ynew[mask_left] = yk[0] + left_slope * (xnew[mask_left] - xk[0])
+    ynew[mask_right] = yk[-1] + right_slope * (xnew[mask_right] - xk[-1])
+
+    return ynew
+
+
 def print_dataset_characteristics(sim):
     print('----------------------------------')
     if sim.cfg.skip_type2:
