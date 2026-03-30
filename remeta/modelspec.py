@@ -49,7 +49,7 @@ class Parameter(ReprMixin):
         guess:
             Initial guess for parameter optimization
         bounds:
-            Parameter bounds of the form (lower bound, upper bound).
+            Parameter bounds of the form [lower bound, upper bound].
         grid_range:
             1-d grid for initial gridsearch in the parameter optimization procedure.
         group:
@@ -75,7 +75,7 @@ class Parameter(ReprMixin):
         self,
         enable: int = None,
         guess: float  = None,
-        bounds: tuple[float, float] = None,
+        bounds: list[float] = None,
         grid_range: list[float] | np.typing.NDArray[float] = None,
         group: None | str = None,
         prior: None | tuple[float, float] = None,
