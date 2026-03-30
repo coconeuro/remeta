@@ -118,32 +118,32 @@ class Configuration(ReprMixin):
     ## Type 1
 
     param_type1_noise: Parameter = field(
-        default=Parameter(enable=1, guess=0.5, bounds=(0.001, 10), grid_range=np.linspace(0.1, 1, 8), default=0.01, model='normal'),
+        default=Parameter(enable=1, guess=0.5, bounds=[0.001, 10], grid_range=np.linspace(0.1, 1, 8), default=0.01, model='normal'),
         metadata={'description': """ 
         Type 1 noise."""
     })
     param_type1_thresh: Parameter = field(
-        default=Parameter(enable=0, guess=0, bounds=(0, 1), grid_range=np.linspace(0, 0.2, 5), default=0),
+        default=Parameter(enable=0, guess=0, bounds=[0, 1], grid_range=np.linspace(0, 0.2, 5), default=0),
         metadata={'description': """ 
         Type 1 threshold."""
     })
     param_type1_bias: Parameter = field(
-        default=Parameter(enable=1, guess=0, bounds=(-1, 1), grid_range=np.linspace(-0.2, 0.2, 8), default=0),
+        default=Parameter(enable=1, guess=0, bounds=[-1, 1], grid_range=np.linspace(-0.2, 0.2, 8), default=0),
         metadata={'description': """ 
         Type 1 bias."""
     })
     param_type1_nonlinear_gain: Parameter = field(
-        default=Parameter(enable=0, guess=0, bounds=(-8 / 9, 10), grid_range=np.linspace(-0.5, 1, 5), default=0),
+        default=Parameter(enable=0, guess=0, bounds=[-8 / 9, 10], grid_range=np.linspace(-0.5, 1, 5), default=0),
         metadata={'description': """ 
         Gain parameter for nonlinear encoding (higher values -> stronger nonlinearity)."""
     })
     param_type1_nonlinear_scale: Parameter = field(
-        default=Parameter(enable=0, guess=1, bounds=(0.01, 10), grid_range=np.linspace(0.01, 2, 5), default=None),
+        default=Parameter(enable=0, guess=1, bounds=[0.01, 10], grid_range=np.linspace(0.01, 2, 5), default=None),
         metadata={'description': """ 
         Scale parameter for the nonlinearity (higher values -> non-linearity kicks in later)."""
     })
     param_type1_noise_heteroscedastic: Parameter = field(
-        default=Parameter(enable=0, guess=0, bounds=(0, 10), grid_range=np.linspace(0, 1, 5), model='multiplicative', default=0),
+        default=Parameter(enable=0, guess=0, bounds=[0, 10], grid_range=np.linspace(0, 1, 5), model='multiplicative', default=0),
         metadata={'description': """ 
         Signal-dependent type 1 noise. Specify the signal dependency via the `.model` attribute of the 
         parameter. Default is `'multiplicative'`, which corresponds to Weber's law with a noise floor. In this case, 
@@ -154,23 +154,23 @@ class Configuration(ReprMixin):
     ## Type 2
 
     param_type2_noise: Parameter = field(
-        default=Parameter(enable=1, guess=0.1, bounds=(0.005, 2), grid_range=np.linspace(0.01, 1, 8), default=0.01),
+        default=Parameter(enable=1, guess=0.1, bounds=[0.005, 2], grid_range=np.linspace(0.01, 1, 8), default=0.01),
         metadata={'description': """ 
         Metacognitive noise. May characterize metacognitive noise of either a noisy-readout, noisy-report or 
         noisy-temperature model."""
     })
     param_type2_evidence_bias: Parameter = field(
-        default=Parameter(enable=0, guess=1, bounds=(0.5, 2), grid_range=np.linspace(0.5, 2, 8), default=1),
+        default=Parameter(enable=0, guess=1, bounds=[0.5, 2], grid_range=np.linspace(0.5, 2, 8), default=1),
         metadata={'description': """ 
         Parameter for a multiplicative metacognitive bias loading on evidence."""
     })
     param_type2_confidence_bias: Parameter = field(
-        default=Parameter(enable=0, guess=1, bounds=(0.5, 2), grid_range=np.linspace(0.5, 2, 8), default=1),
+        default=Parameter(enable=0, guess=1, bounds=[0.5, 2], grid_range=np.linspace(0.5, 2, 8), default=1),
         metadata={'description': """ 
         Parameter for a power-law metacognitive bias loading on confidence."""
     })
     param_type2_criteria: Parameter = field(
-        default=Parameter(enable=3, guess='equispaced', grid_range='equispaced', default='equispaced', bounds=(1e-8, 1)),
+        default=Parameter(enable=3, guess='equispaced', grid_range='equispaced', default='equispaced', bounds=[1e-8, 1]),
         metadata={'description': """ 
         Confidence criteria."""
     })
@@ -404,51 +404,51 @@ class Configuration(ReprMixin):
             lb = 0.05
             self.param_type2_noise.bounds = dict(
                 report = dict(
-                    beta_mean_std=(lb, 0.5),
-                    beta_mode_std=(lb, 1 / np.sqrt(12)),
-                    truncated_normal_mode_std=(lb, 1 / np.sqrt(12)),
-                    truncated_gumbel_mode_std=(lb, 1 / np.sqrt(12)),
-                    truncated_lognormal_mode_std=(lb, 1 / np.sqrt(12)),
-                    beta_mode=(lb, 1),
-                    truncated_normal_mode=(lb, 1),
-                    truncated_gumbel_mode=(lb, 1),
-                    truncated_lognormal_mode=(lb, 4),
-                    truncated_lognormal_mean=(lb, 4),
-                    truncated_lognorm=(lb, 4)
+                    beta_mean_std=[lb, 0.5],
+                    beta_mode_std=[lb, 1 / np.sqrt(12)],
+                    truncated_normal_mode_std=[lb, 1 / np.sqrt(12)],
+                    truncated_gumbel_mode_std=[lb, 1 / np.sqrt(12)],
+                    truncated_lognormal_mode_std=[lb, 1 / np.sqrt(12)],
+                    beta_mode=[lb, 1],
+                    truncated_normal_mode=[lb, 1],
+                    truncated_gumbel_mode=[lb, 1],
+                    truncated_lognormal_mode=[lb, 4],
+                    truncated_lognormal_mean=[lb, 4],
+                    truncated_lognorm=[lb, 4]
                 ),
                 readout = dict(
-                    lognormal_mean=(lb, 1),
-                    lognormal_mode=(lb, 1),
-                    gamma_mean_std=(lb, 1),
-                    lognormal_mean_std=(lb, 2),
-                    lognormal_mode_std=(lb, 2),
-                    lognormal_median_std=(lb, 2),
-                    gamma_mean_cv=(lb, 2),
-                    gamma_mean=(lb, 2),
-                    gamma_mode_std=(lb, 2),
-                    gamma_mode=(lb, 2),
-                    betaprime_mean_std=(lb, 2),
-                    truncated_normal_mode_std=(lb, 2),
-                    truncated_normal_mode=(lb, 2),
-                    truncated_gumbel_mode_std=(lb, 2),
-                    truncated_gumbel_mode=(lb, 2)
+                    lognormal_mean=[lb, 1],
+                    lognormal_mode=[lb, 1],
+                    gamma_mean_std=[lb, 1],
+                    lognormal_mean_std=[lb, 2],
+                    lognormal_mode_std=[lb, 2],
+                    lognormal_median_std=[lb, 2],
+                    gamma_mean_cv=[lb, 2],
+                    gamma_mean=[lb, 2],
+                    gamma_mode_std=[lb, 2],
+                    gamma_mode=[lb, 2],
+                    betaprime_mean_std=[lb, 2],
+                    truncated_normal_mode_std=[lb, 2],
+                    truncated_normal_mode=[lb, 2],
+                    truncated_gumbel_mode_std=[lb, 2],
+                    truncated_gumbel_mode=[lb, 2]
                 ),
                 temperature = dict(
-                    lognormal_mean=(lb, 1),
-                    gamma_mean_std=(lb, 1),
-                    lognormal_mean_std=(lb, 2),
-                    lognormal_median_std=(lb, 2),
-                    gamma_mean_cv=(lb, 2),
-                    gamma_mean=(lb, 2),
-                    gamma_mode_std=(lb, 2),
-                    gamma_mode=(lb, 2),
-                    betaprime_mean_std=(lb, 2),
-                    truncated_normal_mode_std=(lb, 2),
-                    truncated_normal_mode=(lb, 2),
-                    truncated_gumbel_mode_std=(lb, 2),
-                    truncated_gumbel_mode=(lb, 2),
-                    lognormal_mode=(lb, 4),
-                    lognormal_mode_std=(lb, 10),
+                    lognormal_mean=[lb, 1],
+                    gamma_mean_std=[lb, 1],
+                    lognormal_mean_std=[lb, 2],
+                    lognormal_median_std=[lb, 2],
+                    gamma_mean_cv=[lb, 2],
+                    gamma_mean=[lb, 2],
+                    gamma_mode_std=[lb, 2],
+                    gamma_mode=[lb, 2],
+                    betaprime_mean_std=[lb, 2],
+                    truncated_normal_mode_std=[lb, 2],
+                    truncated_normal_mode=[lb, 2],
+                    truncated_gumbel_mode_std=[lb, 2],
+                    truncated_gumbel_mode=[lb, 2],
+                    lognormal_mode=[lb, 4],
+                    lognormal_mode_std=[lb, 10],
                 )
             )[self.type2_noise_type][self.param_type2_noise.model]
             self.param_type2_noise.grid_range = np.exp(np.linspace(np.log(self.param_type2_noise.bounds[0]),
