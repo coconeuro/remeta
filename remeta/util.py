@@ -721,7 +721,6 @@ def check_linearity(stimuli, choices, difficulty_levels=None, method=None, verbo
     plt.ylabel('Evidence (linearized)', fontsize=13)
     plt.xlim(0, 1)
     plt.ylim(0, 1)
-    # plt.title(title, fontsize=10)
     plt.legend(fontsize=8, handlelength=1)
 
     if increasing_orig:
@@ -782,7 +781,7 @@ def linearize_stimulus_evidence(stimuli, choices, difficulty_levels=None, method
              'auto': 'exact' if at most 10 difficulty levels and >=200 samples per difficulty level; else 'rolling'.
              'exact': process each difficulty level separately (recommended if each difficulty level has >=200 samples)
              'rolling': Linearization is performed within a rolling window of size `rolling_size`.
-             'discretize_linear'/'discretize_quantile': The difficulty dimension is divided in `max_levels_discrete`
+             'discretize_linear'/'discretize_quantile': The difficulty dimension is divided in `discretize_nlevels`
              bins either in a linear (equidistant) or a quantile-based (equinumerous) manner; linearization is
              performed for each bin, although some within-bin differentiation is maintained by means of subsequent
              inter/extrapolation.
@@ -799,7 +798,7 @@ def linearize_stimulus_evidence(stimuli, choices, difficulty_levels=None, method
             Only necessary in case of a monotonicity violation. Set False to detect such a violation.
 
     Returns:
-        stimuli_linear: Linerarized stimulus array, normalized to [-1; 1].
+        stimuli_linear: Linearized stimulus array, normalized to [-1; 1].
 
     """
     stim_ids = sorted(np.unique(stimuli))
@@ -899,11 +898,12 @@ def linearize_stimulus_evidence(stimuli, choices, difficulty_levels=None, method
     valid = ~np.isnan(params)
     params_delta = np.diff(params[valid])
     is_monotonic = np.all(params_delta >= 0) or np.all(params_delta <= 0)
-    decreasing = np.polyfit(range(len(params[valid])), params[valid],1)[0] < 0  # in general, higher magnitue = lower type1_noise
+    # decreasing = higher stimulus magnitude ~ lower sensitivity (type1_noise)
+    decreasing = np.polyfit(range(len(params[valid])), params[valid],1)[0] < 0
     if not is_monotonic:
         if not force_monotonic:
             raise ValueError('Sensitivity does not increase or decrease monotonically. Check your difficulty levels, '
-                             'reduce max_levels_discrete or pass force_monotonic=True')
+                             'reduce discretize_nlevels or make sure that force_monotonic=True')
         else:
             # warnings.warn('Sensitivity does not increase or decrease monotonically. Enforcing monotonicity as per '
             #               'force_monotonic=True.')
@@ -931,14 +931,14 @@ def linearize_stimulus_evidence(stimuli, choices, difficulty_levels=None, method
             stimuli_old = stimuli * difficulty_levels
             rem.fit_type1(stimuli_old / stimuli_old.max(), choices, verbosity=0, silence_warnings=True)
             result_old = rem.summary()
-            print(f'Before: type1_noise = {result_old.params["type1_noise"]:.4f}, AIC = {result_old.summary().type1.aic:.1f}')
+            print(f'Before linearization: type1_noise = {result_old.params["type1_noise"]:.4f}, AIC = {result_old.summary().type1.aic:.1f}')
 
         else:
-            print(f'Before: <unavailable, as difficulty levels are coded inversely to stimulus magnitude>')
+            print(f'Before linearization: <unavailable, as difficulty levels are coded inversely to stimulus magnitude>')
 
         rem.fit_type1(stimuli_linear, choices, verbosity=0, silence_warnings=True)
         result_new = rem.summary()
-        print(f'After: type1_noise = {result_new.params["type1_noise"]:.4f}, AIC = {result_new.summary().type1.aic:.1f}')
+        print(f'After linearization: type1_noise = {result_new.params["type1_noise"]:.4f}, AIC = {result_new.summary().type1.aic:.1f}')
 
         if result_old is not None:
             if result_new.summary().type1.aic < result_old.summary().type1.aic:
@@ -980,28 +980,28 @@ def fit_monotone_smooth(y, sigma=2):
     return y_fit
 
 
-def pchip_interp_monotone_extrap(xk, yk, xnew):
+def pchip_interp_monotone_extrap(xknown, yknown, xnew):
 
     # PchipInterpolator for interpolation and boundary derivative for extrapolation
     # Pchip = Piecewise cubic Hermite interpolation (preserves monotony)
 
     from scipy.interpolate import PchipInterpolator
 
-    order = np.argsort(xk)
-    xk = xk[order]
-    yk = yk[order]
+    order = np.argsort(xknown)
+    xknown = xknown[order]
+    yknown = yknown[order]
 
-    f = PchipInterpolator(xk, yk, extrapolate=False)
+    f = PchipInterpolator(xknown, yknown, extrapolate=False)
     ynew = f(xnew)
 
-    left_slope = f.derivative()(xk[0])
-    right_slope = f.derivative()(xk[-1])
+    left_slope = f.derivative()(xknown[0])
+    right_slope = f.derivative()(xknown[-1])
 
-    mask_left = xnew < xk[0]
-    mask_right = xnew > xk[-1]
+    mask_left = xnew < xknown[0]
+    mask_right = xnew > xknown[-1]
 
-    ynew[mask_left] = yk[0] + left_slope * (xnew[mask_left] - xk[0])
-    ynew[mask_right] = yk[-1] + right_slope * (xnew[mask_right] - xk[-1])
+    ynew[mask_left] = yknown[0] + left_slope * (xnew[mask_left] - xknown[0])
+    ynew[mask_right] = yknown[-1] + right_slope * (xnew[mask_right] - xknown[-1])
 
     return ynew
 
