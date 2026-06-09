@@ -75,6 +75,34 @@ class Configuration(ReprMixin):
         If provided as tuple/list, test different solvers and take the best."""
     })
 
+    optim_type1_linearize: bool = field(default=False, metadata={'description': """ 
+        Linearize continuous stimulus (magnitude) information before fitting. For details, see the method. 
+        `util.linearize_stimulus_evidence`"""
+    })
+
+    optim_type1_linearize_kwargs: dict = field(default=None, metadata={'description': """ 
+        Keyword arguments passed to `util.linearize_stimulus_evidence`."""
+    })
+
+    optim_type1_random_effect_method: bool = field(default='measurement_error_map', metadata={'description': """ 
+        Random-effects group estimation method. `'measurement_error_map'` first estimates a group prior from
+        likelihood-only subject estimates and their Hessian-based uncertainty, treating subject estimates as noisy 
+        observations of latent subject effects, and then performs a final nonlinear subject-level MAP optimization with
+        that fitted prior held fixed. This method typically pulls parameter estimates stronger towards the group mean.
+        ``'iterative_map'`` uses alternating empirical-Bayes MAP procedure: subject parameters are repeatedly 
+        re-estimated under the current group prior, then the group mean and standard deviation are updated from the 
+        current subject MAP estimates.
+        """
+    })
+
+    optim_type1_include_posterior_variance: bool = field(default=True, metadata={'description': """ 
+        Only relevant for random-effects modeling with the method `'iterative_map'`: Whether to include the 
+        subject-level posterior variance in the  random-effect population variance update. If True, the population 
+        variance is updated from E[(u_s - mu)^2 | data], approximated as the squared deviation of each subject MAP 
+        estimate plus its posterior variance. If False, the update uses only the between-subject variance of the 
+        MAP estimates. Omitting the posterior variance yields a narrower empirical prior and therefore stronger 
+        shrinkage of individual random-effect estimates toward the group mean."""
+    })
 
 
     ### Type 2 optimization
@@ -109,6 +137,26 @@ class Configuration(ReprMixin):
 
     optim_num_cores: int = field(default=1, metadata={'description': """ 
         Number of cores used for parameter estimation (-1 for all cores minus 1)."""
+    })
+
+    optim_type2_random_effect_method: bool = field(default='measurement_error_map', metadata={'description': """ 
+        Random-effects group estimation method. `'measurement_error_map'` first estimates a group prior from
+        likelihood-only subject estimates and their Hessian-based uncertainty, treating subject estimates as noisy 
+        observations of latent subject effects, and then performs a final nonlinear subject-level MAP optimization with
+        that fitted prior held fixed. This method typically pulls parameter estimates stronger towards the group mean.
+        ``'iterative_map'`` uses alternating empirical-Bayes MAP procedure: subject parameters are repeatedly 
+        re-estimated under the current group prior, then the group mean and standard deviation are updated from the 
+        current subject MAP estimates.
+        """
+    })
+
+    optim_type2_include_posterior_variance: bool = field(default=True, metadata={'description': """ 
+        Only relevant for random-effects modeling with the method `'iterative_map'`: Whether to include the 
+        subject-level posterior variance in the  random-effect population variance update. If True, the population 
+        variance is updated from E[(u_s - mu)^2 | data], approximated as the squared deviation of each subject MAP 
+        estimate plus its posterior variance. If False, the update uses only the between-subject variance of the 
+        MAP estimates. Omitting the posterior variance yields a narrower empirical prior and therefore stronger 
+        shrinkage of individual random-effect estimates toward the group mean."""
     })
 
 
@@ -283,7 +331,7 @@ class Configuration(ReprMixin):
                 warnings.warn(f'Multiprocessing on dill is not installed. Setting optim_num_cores to 1.')
             self.optim_num_cores = 1
 
-        if self.optim_num_cores > 1:
+        if (self.optim_num_cores == -1) or (self.optim_num_cores > 1):
             from multiprocessing import cpu_count
             self._optim_num_cores = max(1, (cpu_count() or 1) - 1) if self.optim_num_cores == -1 \
                 else self.optim_num_cores
