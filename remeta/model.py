@@ -10,7 +10,6 @@ except ModuleNotFoundError:
     pass
 
 import numpy as np
-from scipy.optimize import OptimizeResult
 from scipy.special import expit, ndtr, erfinv
 
 from .configuration import Configuration
@@ -76,6 +75,8 @@ class ReMeta:
         stimuli: list[float] | list[list[float]]  | np.typing.NDArray[float],
         choices: list[float] | list[list[float]]  | np.typing.NDArray[float],
         confidence: list[float] | list[list[float]]  | np.typing.NDArray[float] = None,
+        linearize: bool = False,
+        linearize_kwargs: dict = None,
         verbosity: int = 1,
         silence_warnings: bool = False
     ):
@@ -91,15 +92,22 @@ class ReMeta:
             stimuli: 1d or 2d array or list of signed stimulus intensities
             choices: 1d or 2d array or list of choices (coded as -1/1 or 0/1)
             confidence: 1d or 2d array or list of confidence ratings (normalized to the range 0-1)
+            linearize: Perform stimulus linearization
+            linearize_kwargs: Keyword arguments for stimulus linearization
             verbosity: verbosity level (possible values: 0, 1, 2)
             silence_warnings: if `True`, warnings during model fitting are supressed.
         """
 
         self.data = Data(self.cfg, stimuli, choices, confidence)
 
+        if linearize or self.cfg.optim_type1_linearize:
+            self._linearize_stimuli(linearize_kwargs=linearize_kwargs, verbosity=verbosity,
+                                    silence_warnings=silence_warnings)
+
         self.result = Summary(self.data, self.cfg)
 
-        self.fit_type1(verbosity=verbosity, store_final_results=self.cfg.skip_type2, silence_warnings=silence_warnings,
+        self.fit_type1(verbosity=verbosity, store_final_results=self.cfg.skip_type2,
+                       silence_warnings=silence_warnings,
                        _called_from_fit=True)
 
         if not self.cfg.skip_type2:
@@ -108,12 +116,35 @@ class ReMeta:
         return self
 
 
+    def _linearize_stimuli(self,
+        linearize_kwargs: dict = None,
+        verbosity: int = 1,
+        silence_warnings: bool = False):
+        if verbosity >= 1:
+            print(f'Performing linearization of stimulus magnitude')
+        if (self.data.nsubjects == 1) and not silence_warnings:
+            warnings.warn('Linearization of stimulus magnitude is requested, but data of only a single '
+                          'participant were passed. It is recommended to combine stimulus linearization '
+                          'with a group-level fit.')
+        from .util import linearize_stimulus_evidence
+        if linearize_kwargs is None and self.cfg.optim_type1_linearize_kwargs is None:
+            linearize_kwargs = {}
+        elif linearize_kwargs is None:
+            linearize_kwargs = self.cfg.optim_type1_linearize_kwargs
+        x_stim_linear = linearize_stimulus_evidence(
+            self.data.x_stim, self.data.d_dec, method='auto', verbosity=verbosity, **linearize_kwargs
+        )
+        self.data.preproc_stim(stimuli=x_stim_linear)
+
+
     def fit_type1(
         self,
         stimuli: None | list[float] | list[list[float]]  | np.typing.NDArray[float] = None,
         choices: None | list[float] | list[list[float]]  | np.typing.NDArray[float] = None,
         confidence: None | list[float] | list[list[float]]  | np.typing.NDArray[float] = None,
         store_final_results: bool = True,
+        linearize: bool = False,
+        linearize_kwargs: dict = None,
         verbosity: int = 1,
         silence_warnings: bool = False,
         _called_from_fit: bool = False
@@ -132,6 +163,8 @@ class ReMeta:
             confidence: 1d or 2d array or list of confidence ratings (normalized to the range 0-1)
             store_final_results: if `True`, save final results. Mostly used internally - will be set to `False`,
                 if followed by `fit_type2`.
+            linearize: Perform stimulus linearization
+            linearize_kwargs: Keyword arguments for stimulus linearization
             verbosity: verbosity level (possible values: 0, 1, 2)
             silence_warnings: if `True`, warnings during model fitting are supressed.
             _called_from_fit: internal variable passed by self.fit()
@@ -143,7 +176,9 @@ class ReMeta:
                                  'and choices have to be passed to fits_type1_subject()')
             else:
                 self.data = Data(self.cfg, stimuli, choices, confidence)
-
+                if linearize or self.cfg.optim_type1_linearize:
+                    self._linearize_stimuli(linearize_kwargs=linearize_kwargs, verbosity=verbosity,
+                                            silence_warnings=silence_warnings)
         if verbosity >= 1:
             print(f'Dataset characteristics:')
             print(f'{TAB}No. subjects: {self.data.nsubjects}')
@@ -153,7 +188,8 @@ class ReMeta:
             print(f"{TAB}Choice bias: {100*self.data.stats.choice_bias:.1f}%")
             if not self.cfg.skip_type2 and not store_final_results:
                 print(f"{TAB}Mean confidence: {self.data.stats.mean_confidence:.3f} "
-                      f"(min: {np.min(self.data.c_conf):.3f}, max: {np.max(self.data.c_conf):.3f})")
+                      f"(min: {min(map(lambda x: np.min(x), self.data.c_conf)):.3f},"
+                      f" max: {max(map(lambda x: np.max(x), self.data.c_conf)):.3f})")
 
         self.result = Summary(self.data, self.cfg)
 
@@ -175,6 +211,8 @@ class ReMeta:
                 # Single-subject fits via MLE
                 use_multiproc_for_subject_loop = (self.cfg._optim_num_cores >= 8) and (self.data.nsubjects >= 8)
                 def subject_loop(s):
+                    if (verbosity > 0) and (self.data.nsubjects > 1):
+                        print(f'{TAB} Subject {s + 1} / {self.data.nsubjects}')
                     return subject_estimation(
                         self.compute_type1_negll, self.cfg._paramset_type1, args=[s],
                         gridsearch=self.cfg.optim_type1_gridsearch,
@@ -191,8 +229,6 @@ class ReMeta:
                 else:
                     fits_type1_subject = [None for _ in range(self.data.nsubjects)]
                     for s in range(self.data.nsubjects):
-                        if (verbosity > 0) and (self.data.nsubjects > 1):
-                            print(f'{TAB} Subject {s + 1} / {self.data.nsubjects}')
                         fits_type1_subject[s] = subject_loop(s)
                 # Store single-subject results
                 params_subject = [fits_type1_subject[s].x for s in range(self.data.nsubjects)]
@@ -220,8 +256,9 @@ class ReMeta:
                             idx_re=idx_re,
                             num_cores=self.cfg._optim_num_cores,
                             max_iter=30, sigma_floor=1e-3,
-                            verbosity=verbosity,
-                            # tau=0.05
+                            random_effect_method=self.cfg.optim_type1_random_effect_method,
+                            include_posterior_variance=self.cfg.optim_type1_include_posterior_variance,
+                            verbosity=verbosity
                         )
 
                         self.result.type1.init_group()
@@ -249,6 +286,8 @@ class ReMeta:
 
 
     def fit_type2(self, verbosity=1, silence_warnings=False):
+
+        t0 = timeit.default_timer()
 
         # compute decision values
         self._compute_decision_values()
@@ -278,8 +317,11 @@ class ReMeta:
                     # print(f'{SP2}Scipy solvers: {self.cfg.optim_type1_scipy_solvers}')
 
                 # Single-subject fits via MLE
-                use_multiproc_for_subject_loop = (self.cfg._optim_num_cores >= 8) and (self.data.nsubjects >= 8)
+                # use_multiproc_for_subject_loop = (self.cfg._optim_num_cores >= 8) and (self.data.nsubjects >= 8)
+                use_multiproc_for_subject_loop = (self.cfg._optim_num_cores >= 4) and (self.data.nsubjects >= 4)
                 def subject_loop(s):
+                    if (verbosity > 0) and (self.data.nsubjects > 1):
+                        print(f'{TAB} Subject {s + 1} / {self.data.nsubjects}')
                     return subject_estimation(
                         self.compute_type2_negll, self.cfg._paramset_type2, args=[s],
                         gridsearch=self.cfg.optim_type2_gridsearch,
@@ -291,13 +333,11 @@ class ReMeta:
                         verbosity=verbosity, silence_warnings=silence_warnings
                     )
                 if use_multiproc_for_subject_loop:
-                    with DillPool(self.cfg._optim_multiproc_cores_effective) as pool:
+                    with DillPool(self.cfg._optim_num_cores) as pool:
                         fits_type2_subject = pool.map(subject_loop, range(self.data.nsubjects))
                 else:
                     fits_type2_subject = [None for _ in range(self.data.nsubjects)]
                     for s in range(self.data.nsubjects):
-                        if (verbosity > 0) and (self.data.nsubjects > 1):
-                            print(f'{TAB} Subject {s + 1} / {self.data.nsubjects}')
                         fits_type2_subject[s] = subject_loop(s)
 
                 # Store single-subject results
@@ -328,8 +368,11 @@ class ReMeta:
                             idx_re=idx_re,
                             num_cores=self.cfg._optim_num_cores,
                             max_iter=30, sigma_floor=1e-3,
+                            random_effect_method=self.cfg.optim_type2_random_effect_method,
+                            include_posterior_variance=self.cfg.optim_type2_include_posterior_variance,
                             verbosity=verbosity
                         )
+
                         self.result.type2.init_group()
                         self.result.type2.group.store(
                             'type2', self.cfg, self.data, self.compute_type2_negll,
@@ -350,7 +393,7 @@ class ReMeta:
         # if not silence_warnings:
         #     print_warnings(w)
         if verbosity:
-            print('Type 2 level finished')
+            print(f'Type 2 level finished ({timeit.default_timer() - t0:.1f} secs)')
 
         return self
 
