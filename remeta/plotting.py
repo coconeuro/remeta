@@ -323,6 +323,7 @@ def plot_stimulus_versus_confidence(
         model_prediction_nsamples: int = 10000,
         model_only: bool = False,
         model_prediction_disable_type2_noise: bool = False,
+        model_uncertainty: bool = False,
         axis_mode: bool = False,
         path_export: str | None = None
 ) -> None:
@@ -369,6 +370,7 @@ def plot_stimulus_versus_confidence(
         model_prediction_nsamples: number of samples used to generate model predictions
         model_only: Show the model prediction only (auto-set to True if no data are passed)
         model_prediction_disable_type2_noise: plot model prediction with ~0 metacognitive noise
+        model_uncertainty: plot standard deviation of model prediction
         axis_mode: if True, do not create a new matplotlib figure (allows for subplot integration in existing figures)
         path_export: pass a file path to export a png figure
     """
@@ -565,12 +567,21 @@ def plot_stimulus_versus_confidence(
             plt.plot(levels, c_conf_inc, '-', lw=2, color=color_inc, clip_on=False,
                      label='Model prediction\n(incorrect)', alpha=0.5)
                      # label='Model prediction' + (r"($\sigma_2=0$)" if model_prediction_disable_type2_noise else "")+'\n(incorrect)', alpha=0.5)
+            if model_uncertainty:
+                c_conf_inc_sd = gaussian_filter1d(np.std(c_conf_inc_, axis=0), sigma=model_prediction_nsamples/20)
+                c_conf_cor_sd = gaussian_filter1d(np.std(c_conf_cor_, axis=0), sigma=model_prediction_nsamples/20)
+                plt.fill_between(levels, c_conf_inc-c_conf_inc_sd, c_conf_inc+c_conf_inc_sd, color=color_inc, alpha=0.5, ec='none')
+                plt.fill_between(levels, c_conf_cor-c_conf_cor_sd, c_conf_cor+c_conf_cor_sd, color=color_cor, alpha=0.5, ec='none')
             conf_min_model = min(min(c_conf_inc), min(c_conf_cor))
         else:
-            c_conf_final = gaussian_filter1d(c_conf.mean(axis=0), sigma=model_prediction_nsamples/20)
+            c_conf_mean = c_conf.mean(axis=0)
+            c_conf_final = gaussian_filter1d(c_conf_mean, sigma=model_prediction_nsamples/20)
             plt.plot(levels, c_conf_final, '-', lw=2, color=color_model, clip_on=False,
                      label=f'Model prediction')
                      # label=f'Model prediction' + (r"($\sigma_2=0$)" if model_prediction_disable_type2_noise else ""))
+            if model_uncertainty:
+                c_conf_sd = gaussian_filter1d(np.std(c_conf, axis=0), sigma=model_prediction_nsamples/20)
+                plt.fill_between(levels, c_conf_final-c_conf_sd, c_conf_final+c_conf_sd, color=color_model, alpha=0.5, ec='none')
             conf_min_model = min(c_conf_final)
 
     plt.xlim(-1.05*stim_max, 1.05*stim_max)
@@ -742,7 +753,8 @@ def plot_confidence_histogram(
     if not model_only:
         conf_levels = np.sort(np.unique(confidence))
         n_conf_levels = len(conf_levels)
-        bins = np.linspace(0, 1, n_conf_levels+1) if n_conf_levels >= 8 else np.hstack((0, conf_levels[1:] - np.diff(conf_levels) / 2, 1))
+        # bins = np.linspace(0, 1, n_conf_levels+1) if n_conf_levels >= 8 else np.hstack((0, conf_levels[1:] - np.diff(conf_levels) / 2, 1))
+        bins = np.linspace(0, 1, 9) if n_conf_levels >= 8 else np.hstack((0, conf_levels[1:] - np.diff(conf_levels) / 2, 1))
 
         if separate_by_category:
             counts0 = np.histogram(confidence[np.sign(stimuli) == -1], bins=bins)[0]
@@ -775,9 +787,12 @@ def plot_confidence_histogram(
     if model_prediction:
         if model_only:
             _nsamples = int(np.ceil(model_prediction_nsamples / 2))
-            bins = np.linspace(0, 1, 5)
         else:
             _nsamples = len(confidence)
+
+        if model_only or 'type2_criteria' in params:
+            bins = np.linspace(0, 1, 5)
+
         stim_min = stim_max / _nsamples
         levels = np.hstack((np.linspace(-stim_max, -stim_min, _nsamples), np.linspace(stim_min, stim_max, _nsamples)))
         # y_decval = stimulus_to_decision_value(levels, params, return_only_decval=True)
@@ -793,6 +808,10 @@ def plot_confidence_histogram(
             silence_warnings=True
         )
         c_conf = (ds.confidence + 1) / 2 if probability_correct else ds.confidence
+
+        # if 'type2_criteria' in params:
+        #     # bins = np.hstack((0, params['type2_criteria'], 1))
+        #     bins = np.hstack((0, np.unique(c_conf)[1:] - np.diff(np.unique(c_conf))/2, 1))
 
         if separate_by_category:
             counts0_ = [np.histogram(c_conf[s][np.sign(ds.stimuli[s]) == -1], bins=bins)[0] for s in range(nsubjects)]
