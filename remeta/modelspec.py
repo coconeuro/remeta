@@ -267,13 +267,11 @@ class Data(ReprMixin):
         self.nsubjects = len(self.x_stim)
         self.nsamples = np.array([len(v) for v in self.x_stim], int)
 
-        _xstim_abs = np.abs(self.x_stim)
-        self.x_stim_min = np.min(_xstim_abs)
-        self.x_stim_max = np.max(_xstim_abs)
-        # self.x_stim_min = min([np.abs(v).min() for v in self.x_stim])
-        # self.x_stim_max = max([np.abs(v).max() for v in self.x_stim])
+        _xstim_abs = [np.abs(v) for v in self.x_stim]
+        self.x_stim_min = min(map(lambda x: np.min(x), _xstim_abs))
+        self.x_stim_max = max(map(lambda x: np.max(x), _xstim_abs))
 
-        if not self.cfg.normalize_stimuli_by_max and np.any(np.median(_xstim_abs, axis=1) > 2):
+        if not self.cfg.normalize_stimuli_by_max and np.any(list(map(lambda x: np.median(x) > 2, _xstim_abs))):
             warnings.warn('For at least one subject, the median of stimulus intensities is > 2. ReMeta is optimized '
                           'for stimuli that are roughly in the range [-1; 1]. ReMeta will ensure this automatically, '
                           'if you set cfg.normalize_stimuli_by_max = True.')
@@ -303,9 +301,9 @@ class Data(ReprMixin):
             self.d_dec_sign[s] = np.sign(self.d_dec[s] - 0.5)
             self.d_dec_3d[s] = self.d_dec[s][..., np.newaxis]
             self.accuracy[s] = (self.x_stim_category[s] == self.d_dec[s]).astype(int)
-            self.stats_accuracy[s] = np.mean(self.accuracy[s]),
+            self.stats_accuracy[s] = np.mean(self.accuracy[s])
             self.stats_dprime[s] = norm.ppf(min(1 - 1e-3, max(1e-3, self.d_dec[s][self.x_stim_category[s] == 1].mean()))) - \
-                                   norm.ppf(min(1 - 1e-3, max(1e-3, self.d_dec[s][self.x_stim_category[s] == 0].mean().mean()))),
+                                   norm.ppf(min(1 - 1e-3, max(1e-3, self.d_dec[s][self.x_stim_category[s] == 0].mean().mean())))
             self.stats_choice_bias[s] = self.d_dec[s].mean() - self.x_stim_category[s].mean()
             # self.stats_choice_bias[s] = compute_choice_bias(self.x_stim[s], self.d_dec[s])
             # self.stats_choice_bias[s] = compute_choice_bias_horizontal(self.x_stim[s], self.d_dec[s])
@@ -369,7 +367,7 @@ class ModelResult():
             # For subject-level fits, the Hessian will have been passed, for group-level random/fixed effects
             # the standard error (and the covariance in case of random effects).
             cov, se_params = None, None
-            if (self.level == 'subject') and hessian is not None:
+            if (self.level == 'subject') and hessian is not None and hessian[s] is not None:
                 cov = cov_from_hessian(hessian[s])
                 se_params = se_from_cov(cov)
             elif (self.level == 'group') and params_se is not None:
@@ -384,6 +382,9 @@ class ModelResult():
 
             if se_params is not None:
                 self.params_se[s] = {p: se_params[ind] for p, ind in getattr(cfg, f'_paramset_{stage}').param_ind.items()}
+            else:
+                self.params_se[s] = {p: np.full(len(ind), np.nan) if np.array(ind).ndim > 0 else np.nan for p, ind
+                                     in getattr(cfg, f'_paramset_{stage}').param_ind.items()}
 
             if stage == 'type1':
                 self.params_extra[s] = {f'{k}_unnorm': list(np.array(v) * data.x_stim_max) if listlike(v) else
@@ -407,7 +408,8 @@ class ModelResult():
         params_extra = dict()
         params_extra['type2_criteria_bias'] = bias_crit
         params_extra['type2_criteria_bias_sem'] = bias_crit_se
-        params_extra['type2_criteria_confidence_bias'] = -params_extra['type2_criteria_bias']
+        params_extra['type2_criteria_confidence_bias'] = None if params_extra['type2_criteria_bias'] is None \
+            else -params_extra['type2_criteria_bias']
         params_extra['type2_criteria_confidence_bias_sem'] = bias_crit_se
         # params_extra['type2_criteria_absdev'] = np.abs(diff).mean()
         # params_extra['type2_criteria_bias'] = \
@@ -491,8 +493,12 @@ class ModelResultContainer():
                 true_string = '' if true_params is None or k not in true_params else \
                     (f" (true: [{', '.join([f'{p:.3f}' for p in true_params[k]])}])" if  # noqa
                      listlike(true_params[k]) else f' (true: {true_params[k]:.3f})')  # noqa
+                # se = (np.full(len(v), np.nan) if listlike(v) else np.nan) if params_se is None else params_se[k]
                 se = params_se[k]
-                value_string = f"[{', '.join([f'{p:.3f} ± {er:.3f}' for p, er in zip(v, se)])}]" if listlike(v) else f'{v:.3f} ± {se:.3f}'
+                if np.all(np.isnan(se)):
+                    value_string = f"[{', '.join([f'{p:.3f}' for p, er in zip(v, se)])}] (SE n/a)" if listlike(v) else f'{v:.3f} (SE n/a)'
+                else:
+                    value_string = f"[{', '.join([f'{p:.3f} ± {er:.3f}' for p, er in zip(v, se)])}]" if listlike(v) else f'{v:.3f} ± {se:.3f}'
                 print(f'{indent}{TAB}[{level_fmt}] {k}: {value_string}{true_string}')
 
             if params_extra is not None:
@@ -500,7 +506,10 @@ class ModelResultContainer():
                     if not p.split('_')[-1].isdigit() and not p.endswith('_sem'):
                         if f'{p}_sem' in params_extra:
                             se = params_extra[f'{p}_sem']
-                            value_string =  f"[{', '.join([f'{p:.3f} ± {er:.3f}' for p, er in zip(v, se)])}]" if listlike(v) else f'{v:.3f} ± {se:.3f}'
+                            if np.all(np.isnan(se)):
+                                value_string =  f"[{', '.join([f'{p:.3f}' for p, er in zip(v, se)])}] (SE n/a)" if listlike(v) else f'{v:.3f} (SE n/a)'
+                            else:
+                                value_string =  f"[{', '.join([f'{p:.3f} ± {er:.3f}' for p, er in zip(v, se)])}]" if listlike(v) else f'{v:.3f} ± {se:.3f}'
                         else:
                             value_string =  f"[{', '.join([f'{p:.3f}' for p in v])}]" if listlike(v) else f'{v:.3f}'
                         if true_params is None:
