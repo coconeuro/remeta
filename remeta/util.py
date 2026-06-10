@@ -276,6 +276,28 @@ def compute_cov_criteria(cov_full, idx_crit):
     return cov_crit
 
 
+def _solve_criterion_covariance(cov, rhs):
+    try:
+        c, lower = cho_factor(cov, lower=True, check_finite=False)
+        return cho_solve((c, lower), rhs, check_finite=False)
+    except np.linalg.LinAlgError:
+        eigval, eigvec = np.linalg.eigh(cov)
+        tol = np.finfo(float).eps * max(cov.shape) * max(np.max(np.abs(eigval)), 1.0)
+        keep = eigval > tol
+
+        if np.any(eigval < -tol):
+            warnings.warn(
+                'Criterion covariance is not positive semidefinite; negative eigenvalues are clipped '
+                'for the criterion-bias uncertainty calculation.',
+                RuntimeWarning,
+                stacklevel=2
+            )
+        if not np.any(keep):
+            raise np.linalg.LinAlgError('Criterion covariance has no positive eigenvalues')
+
+        return eigvec[:, keep] @ ((eigvec[:, keep].T @ rhs) / eigval[keep])
+
+
 def compute_criterion_bias(criteria, cov_crit):
     """Idea: compute criterion bias as a weighted sum of differences from Bayes-optiomal criteria.
        The weights are the uncertainty estimates (SEs) of the criteria; we slightly improve on this
@@ -283,20 +305,34 @@ def compute_criterion_bias(criteria, cov_crit):
        matrix.
     """
 
+    cov_crit = 0.5 * (cov_crit + cov_crit.T)
+
     k = len(criteria) + 1
     crit_bayes = np.arange(1/k, 1-1e-10, 1/k)
     diff = criteria - crit_bayes
     one = np.ones_like(criteria)
 
-    c, lower = cho_factor(cov_crit)
     # numer = (multivariate) weighted sum of criterion differences
-    numer = one @ cho_solve((c, lower), diff)
-    # denom = (multivariate) sum of all weights
-    denom = one @ cho_solve((c, lower), one)
-    bias_crit = numer / denom
-    bias_crit_se = np.sqrt(1 / denom)
+    try:
+        numer = one @ _solve_criterion_covariance(cov_crit, diff)
+        # denom = (multivariate) sum of all weights
+        denom = one @ _solve_criterion_covariance(cov_crit, one)
+        if (not np.isfinite(denom)) or (denom <= 0):
+            raise np.linalg.LinAlgError('Criterion covariance does not define a positive criterion-bias precision')
 
-    return bias_crit, bias_crit_se
+        bias_crit = numer / denom
+        bias_crit_se = np.sqrt(1 / denom)
+
+        return bias_crit, bias_crit_se
+
+    except np.linalg.LinAlgError:
+        warnings.warn(
+            'Cannot compute criterion bias due to a deficient criterion covariance matrix.',
+            RuntimeWarning,
+            stacklevel=2
+        )
+        return None, None
+
 
 def compute_choice_bias(stimuli, choices, smooth=0.5):
     # levels = np.sort(np.unique(np.abs(stimuli)))
@@ -662,17 +698,30 @@ def check_linearity(stimuli, choices, difficulty_levels=None, method=None, verbo
         kwargs: parameters passed to linearize_stimulus_evidence()
     """
 
+
     stim_ids = sorted(np.unique(stimuli))
 
+    stimuli_equal_zero = stimuli == 0
+    stimuli_contained_zero = stimuli_equal_zero.sum() > 0
+    if 0 in stimuli:
+        stimuli[stimuli_equal_zero] = 1e-12 * np.random.randn(stimuli_equal_zero.sum())
+
     if difficulty_levels is None:
+
         if len(stim_ids) <= 2:
             raise ValueError('Stimulus variable seems binary and no difficulty levels passed -> cannot compute gradual '
                              'stimulus values')
         difficulty_levels = np.abs(stimuli)
-        stimuli = np.sign(stimuli)
+
+        stimuli = np.sign(stimuli + 1e-12)
+
     else:
-        if len(stim_ids) > 2:
-            raise ValueError('Stimuli should have exactly two values')
+        if len(stim_ids) > (2 + stimuli_contained_zero):
+            raise ValueError('Stimuli should have exactly two categorical values if difficulty levels are passed '
+                             '(however, stimuli can be 0 to indicate absence of evidence).')
+        if stimuli_contained_zero:
+            stimuli[stimuli_equal_zero & (stimuli < 0)] = stim_ids[0]
+            stimuli[stimuli_equal_zero & (stimuli > 0)] = stim_ids[1]
         if (stim_ids[0] != -1) or (stim_ids[1] != 1):
             warnings.warn('Stimuli are not in a -1/+1 format. Hence, the smaller stimulus value is converted to'
                           '-1 and the larger to +1.')
@@ -712,13 +761,18 @@ def check_linearity(stimuli, choices, difficulty_levels=None, method=None, verbo
 
     levels_linear = [np.abs(stimuli_linear[difficulty_levels == level])[0] for level in levels_orig]
 
+    stimuli_linear_linear = linearize_stimulus_evidence(stimuli_linear, choices, method=method,
+                                                 verbosity=0, **kwargs)
+    levels_linear_linear = [np.abs(stimuli_linear_linear[difficulty_levels == level])[0] for level in levels_orig]
+
     import matplotlib.pyplot as plt
     plt.figure(figsize=(9 if increasing_orig else 6, 3))
     plt.subplot(1, 2+increasing_orig, 1)
     plt.plot([0, 1], [0, 1], 'k-', label='Perfect\nlinearity')
-    plt.plot(levels_orig / np.max(levels_orig), levels_linear, label='Empirical')
-    plt.xlabel('Evidence (original)', fontsize=13)
-    plt.ylabel('Evidence (linearized)', fontsize=13)
+    plt.plot(levels_orig / np.max(levels_orig), levels_linear, label='Original')
+    plt.plot(levels_linear, levels_linear_linear, label='Linearized')
+    plt.xlabel('Evidence (provided)', fontsize=13)
+    plt.ylabel('Evidence (objective)', fontsize=13)
     plt.xlim(0, 1)
     plt.ylim(0, 1)
     plt.legend(fontsize=8, handlelength=1)
@@ -740,7 +794,7 @@ def check_linearity(stimuli, choices, difficulty_levels=None, method=None, verbo
 
 
 def linearize_stimulus_evidence(stimuli, choices, difficulty_levels=None, method='auto',
-                                rolling_size='auto', rolling_auto_nsamples=200, discretize_nlevels=10,
+                                rolling_size='auto', rolling_size_auto_criterion=0.1, discretize_nlevels=10,
                                 noise_model='normal', force_monotonic=True, type1_noise_bounds=(0.001, np.inf),
                                 verbosity=1):
     """
@@ -778,16 +832,21 @@ def linearize_stimulus_evidence(stimuli, choices, difficulty_levels=None, method
             It is recommended to use the data of the entire group!
             Must be passed if the stimuli array is binary. Should encode difficulty or stimulus magnitude.
         method: 'auto', 'exact', 'rolling', 'discretize_linear' or 'discretize_quantile'
-             'auto': 'exact' if at most 10 difficulty levels and >=200 samples per difficulty level; else 'rolling'.
-             'exact': process each difficulty level separately (recommended if each difficulty level has >=200 samples)
-             'rolling': Linearization is performed within a rolling window of size `rolling_size`.
-             'discretize_linear'/'discretize_quantile': The difficulty dimension is divided in `discretize_nlevels`
-             bins either in a linear (equidistant) or a quantile-based (equinumerous) manner; linearization is
-             performed for each bin, although some within-bin differentiation is maintained by means of subsequent
-             inter/extrapolation.
+            'auto': 'exact' if at most 10 difficulty levels and >=200 samples per difficulty level; else 'rolling'.
+            'exact': process each difficulty level separately (recommended if each difficulty level has >=200 samples)
+            'rolling': Linearization is performed within a rolling window of size `rolling_size`.
+            'discretize_linear'/'discretize_quantile': The difficulty dimension is divided in `discretize_nlevels`
+            bins either in a linear (equidistant) or a quantile-based (equinumerous) manner; linearization is
+            performed for each bin, although some within-bin differentiation is maintained by means of subsequent
+            inter/extrapolation.
         rolling_size: Window size for discretization 'rolling'. In case of 'auto', the window is chosen such that there
-                      are around `rolling_auto_nsamples` samples within a window.
-        rolling_auto_nsamples: Sample size for discretization 'rolling' and rolling_size 'auto'. Windows size is
+                      is a certain minimimum no. of samples within a window (governed by `rolling_size_auto_criterion`).
+        rolling_size_auto_criterion: Sample size criterion for discretization 'rolling' and rolling_size 'auto'.
+            If rolling_size_auto_criterion < 1, it specifies the minimum *fraction of the total number of samples*
+                within a rolling window.
+            If rolling_size_auto_criterion >= 1, it specifies the minimum *number of samples* within a rolling window.
+
+        Windows size is
                                adaptively chosen such that the sample size for each fit is at least
                                `rolling_auto_nsamples`.
         discretize_nlevels: Number of difficulty bins for methods 'auto' / 'discretize_linear' / 'discretize_quantile'.
@@ -801,6 +860,20 @@ def linearize_stimulus_evidence(stimuli, choices, difficulty_levels=None, method
         stimuli_linear: Linearized stimulus array, normalized to [-1; 1].
 
     """
+
+    # Flatten if 2d arrays/lists are passed
+    if hasattr(stimuli[0] ,'__len__') and (len(stimuli[0]) > 1):
+        group_data = True
+        group_nsubjects = len(stimuli)
+        group_nsamples = [len(stim) for stim in stimuli]
+        group_was_ndarray = type(stimuli) == np.ndarray
+        stimuli = np.hstack(stimuli)
+        choices = np.hstack(choices)
+        if difficulty_levels is not None:
+            difficulty_levels = np.hstack(difficulty_levels)
+    else:
+        group_data = False
+
     stim_ids = sorted(np.unique(stimuli))
 
     if difficulty_levels is None:
@@ -825,6 +898,9 @@ def linearize_stimulus_evidence(stimuli, choices, difficulty_levels=None, method
 
     if method == 'auto':
         method = 'exact' if (n_levels <= 10) and (n_samples / n_levels >= 200) else 'rolling'
+        if verbosity:
+            print(f"\t{n_levels} difficulty levels and on average {n_samples / n_levels:.1f} trials per level. "
+                  f"Using method '{method}'.")
     if method == 'exact':
         difficulty_levels_final = difficulty_levels
         levels_final = levels
@@ -837,6 +913,13 @@ def linearize_stimulus_evidence(stimuli, choices, difficulty_levels=None, method
             from scipy.stats import rankdata
             difficulty_levels_final = rankdata(difficulty_levels, method='dense') - 1
             levels_final = levels
+            if rolling_size == 'auto':
+                if rolling_size_auto_criterion < 1:
+                    rolling_size_auto_n_samples = min(1000, max(150, int(np.round(rolling_size_auto_criterion * n_samples))))
+                    if verbosity:
+                        print(f'\tUsing a minimum of {rolling_size_auto_n_samples} samples for each rolling window.')
+                else:
+                    rolling_size_auto_n_samples = int(rolling_size_auto_criterion)
         else:
             if method == 'discretize_linear':
                 edges = np.linspace(np.min(levels), np.max(levels), discretize_nlevels + 1)
@@ -865,7 +948,7 @@ def linearize_stimulus_evidence(stimuli, choices, difficulty_levels=None, method
             if rolling_size == 'auto':
                 while True:
                     if (np.sum(np.isin(difficulty_levels_final, range(max(0, i - j), min(n_levels, i + j + 1))))
-                            >= rolling_auto_nsamples):
+                            >= rolling_size_auto_n_samples):
                         break
                     if j > n_levels:
                         raise ValueError('Two few samples for method `rolling`.')
@@ -946,6 +1029,12 @@ def linearize_stimulus_evidence(stimuli, choices, difficulty_levels=None, method
             else:
                 warnings.warn(f'\t-> Linearization impairs the model fit. This is unexpected and might indicate '
                               f'incorrect usage of the linearization method.')
+
+    if group_data:
+        stimuli_linear = [stimuli_linear[int(np.sum(group_nsamples[:i])):int(np.sum(group_nsamples[:i+1]))] for i
+                          in range(group_nsubjects)]
+        if group_was_ndarray:
+            stimuli_linear = np.array(stimuli_linear)
 
     return stimuli_linear
 
