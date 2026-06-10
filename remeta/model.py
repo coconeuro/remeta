@@ -221,6 +221,7 @@ class ReMeta:
                         minimize_along_grid=self.cfg.optim_type1_minimize_along_grid,
                         global_minimization=self.cfg.optim_type1_global_minimization,
                         # fine_gridsearch=self.cfg.optim_type1_fine_gridsearch,
+                        force_hessian_uncertainty=self.cfg.optim_force_hessian_uncertainty,
                         verbosity=verbosity, silence_warnings=silence_warnings
                     )
                 if use_multiproc_for_subject_loop:
@@ -330,6 +331,7 @@ class ReMeta:
                         global_minimization=self.cfg.optim_type2_global_minimization,
                         # fine_gridsearch=self.cfg.optim_type2_fine_gridsearch,
                         scipy_solvers=self.cfg.optim_type2_scipy_solvers, slsqp_epsilon=self.cfg.optim_type2_slsqp_epsilon,
+                        force_hessian_uncertainty=self.cfg.optim_force_hessian_uncertainty,
                         verbosity=verbosity, silence_warnings=silence_warnings
                     )
                 if use_multiproc_for_subject_loop:
