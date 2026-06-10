@@ -48,7 +48,13 @@ class Configuration(ReprMixin):
         If `True`, only fit type 1 data. No confidence data needs to be passed to `fit()` in this case."""
     })
 
+    ### General optimization settings
 
+    optim_force_hessian_uncertainty: bool = field(default=False, metadata={'description': """ 
+        If `True`, force an estimation of parameter uncertainty even if the Hessian of the 
+        likelihood is not positive definite. Enforcement is performed via ridge regularization. 
+        Only activate if you know what you're doing."""
+    })
 
     ### Type 1 optimization
 
