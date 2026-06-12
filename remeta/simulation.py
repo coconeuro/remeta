@@ -14,8 +14,9 @@ from remeta.util import _check_param, discretize_confidence_with_bounds, print_d
 
 def simulate(
     params: dict = None,
-    nsubjects: int = 1,
-    nsamples: int = 1000,
+    n_subjects: int = 1,
+    n_samples: int = 1000,
+    n_ratings: int = None,
     cfg: Configuration = None,
     stim_min: float | None = None,
     stim_max: float | None = 1,
@@ -33,15 +34,16 @@ def simulate(
     Usage:
         `sim = simulate(params=dict(type1_noise=0.5, type2_noise=0.3))`
 
-        `sim = simulate(params=dict(type1_noise=0.5, type2_noise=0.3), nsamples=500)`
+        `sim = simulate(params=dict(type1_noise=0.5, type2_noise=0.3), n_samples=500)`
 
         `sim = simulate(params=dict(type1_noise=0.5, type2_noise=0.3), cfg=cfg)`
 
 
     Args:
         params: Parameter values (dictionary with {param_name: param_value} entries)
-        nsubjects: Number of subjects
-        nsamples: Number of samples per subject
+        n_subjects: Number of subjects
+        n_samples: Number of samples per subject
+        n_ratings: Number of (discrete) confidence levels
         cfg: `remeta.configuration.Configuration` instance (for model specification)
         stim_min: minimum stimulus intensity
         stim_max: maximum stimulus intensity
@@ -65,20 +67,20 @@ def simulate(
         cfg = Configuration(**cfg_kwargs)
         for k, v in params.items():
             if f'param_{k}' in cfg_dict:
-                setattr(getattr(cfg, f'param_{k}'), 'enable', len(v) if listlike(v) else 1)
+                setattr(getattr(cfg, f'param_{k}'), 'enable', True)
             else:
                 raise ValueError(f'Unknown parameter {k}')
         for k, v in cfg_dict.items():
             if isinstance(v, Parameter):
                 if k.split('param_')[1] not in params:
-                    setattr(getattr(cfg, k), 'enable', 0)
+                    setattr(getattr(cfg, k), 'enable', False)
 
-        # for setting in cfg.__dict__:
-        #     if setting.startswith('param_'):
-        #         if setting.split('param_')[1] not in params:
-        #             setattr(getattr(cfg, setting), 'enable', 0)
-    # if not cfg.setup_called:
     cfg.setup(generative_mode=True, silence_warnings=silence_warnings)
+
+    if not cfg.skip_type2 and cfg.param_type2_criteria.enable:
+        if n_ratings is None:
+            n_ratings = len(params['type2_criteria']) + 1
+        cfg._prepare_confidence_criteria(n_ratings)
 
     if cfg.param_type2_noise.model is None:
         cfg.param_type2_noise.model = dict(report='truncated_norm_mode', readout='truncated_norm_mode', temperature='lognorm_mode')[cfg.type2_noise_type]
@@ -92,15 +94,15 @@ def simulate(
             params.pop(f'type2_{p}', None)
 
     if custom_stimuli is None:
-        x_stim = generate_stimuli(nsubjects, nsamples, stim_min=stim_min, stim_max=stim_max, stim_levels=stim_levels)
+        x_stim = generate_stimuli(n_subjects, n_samples, stim_min=stim_min, stim_max=stim_max, stim_levels=stim_levels)
     else:
         custom_stimuli = np.array(custom_stimuli)
         if custom_stimuli.ndim == 1:
             custom_stimuli = custom_stimuli.reshape(1, -1)
-        nsamples = custom_stimuli.shape[1]
+        n_samples = custom_stimuli.shape[1]
         x_stim = custom_stimuli / np.max(np.abs(custom_stimuli))
-        if (x_stim.shape[0] == 1) and (nsubjects > 1):
-            x_stim = np.tile(x_stim, (nsubjects, 1))
+        if (x_stim.shape[0] == 1) and (n_subjects > 1):
+            x_stim = np.tile(x_stim, (n_subjects, 1))
     x_stim_category = (np.sign(x_stim) > 0).astype(int)
     y_decval_latent, y_decval, d_dec = stimulus_to_decision_value(x_stim, params, cfg)
 
@@ -113,7 +115,7 @@ def simulate(
             dist = get_type2_dist(cfg.param_type2_noise.model, type2_center=z1_type1_evidence_base, type2_noise=params['type2_noise'],
                                   type2_noise_type=cfg.type2_noise_type)
 
-            z1_type1_evidence = np.maximum(0, dist.rvs((nsubjects, nsamples)))
+            z1_type1_evidence = np.maximum(0, dist.rvs((n_subjects, n_samples)))
         elif cfg.type2_noise_type == 'temperature':
             dist = get_type2_dist(cfg.param_type2_noise.model, type2_center=params['type1_noise'] * np.ones_like(z1_type1_evidence_base),
                                   type2_noise=params['type2_noise'], type2_noise_type=cfg.type2_noise_type)
@@ -141,7 +143,7 @@ def simulate(
         if cfg.type2_noise_type == 'report':
             dist = get_type2_dist(cfg.param_type2_noise.model, type2_center=c_conf_base, type2_noise=params['type2_noise'],
                                   type2_noise_type=cfg.type2_noise_type)
-            c_conf = np.maximum(0, np.minimum(1, dist.rvs((nsubjects, nsamples))))
+            c_conf = np.maximum(0, np.minimum(1, dist.rvs((n_subjects, n_samples))))
         else:
             c_conf = c_conf_base
 
@@ -176,7 +178,7 @@ def simulate(
             c_conf = c_conf.squeeze()  # noqa
 
     simargs = dict(
-        nsubjects=nsubjects, nsamples=nsamples, params=params, cfg=cfg,
+        n_subjects=n_subjects, n_samples=n_samples, params=params, cfg=cfg,
         x_stim_category=x_stim_category, x_stim=x_stim, d_dec=d_dec,
         y_decval=y_decval, y_decval_latent=y_decval_latent
     )
@@ -231,8 +233,8 @@ class Simulation:
     This class is created by the `remeta.simulation.simulate()`. Manual creation is discouraged.
 
     Args:
-        nsubjects: Number of subjects
-        nsamples: Number of samples per subject
+        n_subjects: Number of subjects
+        n_samples: Number of samples per subject
         params: Dictionary of model parameters
         params_extra: Optional dictionary of extra parameters
         cfg: `remeta.configuration.Configuration` instance
@@ -252,8 +254,8 @@ class Simulation:
     """
 
     def __init__(self,
-        nsubjects: int = None,
-        nsamples: int = None,
+        n_subjects: int = None,
+        n_samples: int = None,
         params: dict = None,
         params_extra: dict | None = None,
         cfg: Configuration = None,
@@ -272,8 +274,8 @@ class Simulation:
         type2_stats: dict = None
     ):
 
-        self.nsubjects = nsubjects
-        self.nsamples = nsamples
+        self.n_subjects = n_subjects
+        self.n_samples = n_samples
         self.params = params
         self.params_type1 = {k: v for k, v in self.params.items() if k.startswith('type1_')}
         self.params_type2 = {k: v for k, v in self.params.items() if k.startswith('type2_')}
@@ -316,10 +318,10 @@ class Simulation:
         remeta.plot_confidence_histogram(self, **kwargs)
 
 
-def generate_stimuli(nsubjects, nsamples, stim_min=None, stim_max=1, stim_levels=10):
+def generate_stimuli(n_subjects, n_samples, stim_min=None, stim_max=1, stim_levels=10):
     stim_min = stim_max / stim_levels if stim_min is None else stim_min
     levels = np.hstack((-np.linspace(stim_min, stim_max, stim_levels)[::-1], np.linspace(stim_min, stim_max, stim_levels)))
-    x_stim = np.array([np.random.permutation(np.tile(levels, int(np.ceil(nsamples / len(levels)))))[:nsamples] for _ in range(nsubjects)])
+    x_stim = np.array([np.random.permutation(np.tile(levels, int(np.ceil(n_samples / len(levels)))))[:n_samples] for _ in range(n_subjects)])
     return x_stim
 
 
@@ -327,17 +329,17 @@ def stimulus_to_latent_decision_value(x_stim, params, cfg=None):
 
     x_stim = np.array(x_stim)
 
-    if ('type1_thresh' in params and not (cfg is not None and (cfg.param_type1_thresh.enable == 0))):
+    if ('type1_thresh' in params and not (cfg is not None and not cfg.param_type1_thresh.enable)):
         type1_thresh = _check_param(params['type1_thresh'])
     else:
         type1_thresh = (0, 0)
-    if ('type1_bias' in params and not (cfg is not None and (cfg.param_type1_bias.enable == 0))):
+    if ('type1_bias' in params and not (cfg is not None and not cfg.param_type1_bias.enable)):
         type1_bias = _check_param(params['type1_bias'])
     else:
         type1_bias = (0, 0)
 
-    if ('type1_nonlinear_gain' in params and not (cfg is not None and (cfg._param_type1_nonlinear_gain.enable == 0))):
-        if ('type1_nonlinear_scale' in params and not (cfg is not None and (cfg.param_type1_nonlinear_scale.enable == 0))):
+    if ('type1_nonlinear_gain' in params and not (cfg is not None and not cfg._param_type1_nonlinear_gain.enable)):
+        if ('type1_nonlinear_scale' in params and not (cfg is not None and not cfg.param_type1_nonlinear_scale.enable)):
             scale = params['type1_nonlinear_scale'] * np.max(x_stim)
         else:
             scale = None
@@ -355,8 +357,8 @@ def stimulus_to_latent_decision_value(x_stim, params, cfg=None):
 
 def stimulus_to_decision_value(x_stim, params, cfg=None, return_only_decval=False):
 
-    if ('type1_noise_heteroscedastic' in params and not (cfg is not None and (cfg.param_type1_noise_heteroscedastic.enable == 0))) or \
-        (listlike(params['type1_noise']) and not (cfg is not None and (cfg.param_type1_noise.enable < 2))):
+    if ('type1_noise_heteroscedastic' in params and not (cfg is not None and not cfg.param_type1_noise_heteroscedastic.enable)) or \
+        (listlike(params['type1_noise']) and not (cfg is not None and not cfg.param_type1_noise.asym)):
         type1_noise = compute_signal_dependent_type1_noise(
             x_stim=x_stim, type1_noise_signal_dependency=None if cfg is None or not cfg.param_type1_noise_heteroscedastic.enable else cfg.param_type1_noise_heteroscedastic.model, **params)
     else:
@@ -392,8 +394,8 @@ if __name__ == '__main__':
     cfg = remeta.Configuration()
     cfg.type2_noise_type = 'report'
     cfg.param_type2_noise.model = 'beta_mode'
-    cfg.param_type1_thresh.enable = 1
-    cfg.param_type1_bias.enable = 1
-    cfg.param_type2_evidence_bias.enable = 0
-    m = simulate(params, nsubjects=1, nsamples=1000, cfg=cfg)
+    cfg.param_type1_thresh.enable = True
+    cfg.param_type1_bias.enable = True
+    cfg.param_type2_evidence_bias.enable = False
+    m = simulate(params, n_subjects=1, n_samples=1000, cfg=cfg)
 
