@@ -517,7 +517,7 @@ def plot_stimulus_versus_confidence(
         #     **params
         # )
         ds = simulate(
-            nsubjects=100,
+            n_subjects=100,
             params=params, cfg=cfg, custom_stimuli=levels, verbosity=False,
             stim_max=stim_max, squeeze=True, compute_stats=False,
             silence_warnings=True
@@ -802,7 +802,7 @@ def plot_confidence_histogram(
         # )
         nsubjects = 100 if model_only else 500
         ds = simulate(
-            nsubjects=nsubjects,
+            n_subjects=nsubjects,
             params=params, cfg=cfg, custom_stimuli=levels, verbosity=False,
             stim_max=stim_max, squeeze=True, compute_stats=False,
             silence_warnings=True
