@@ -129,11 +129,7 @@ def subject_estimation(fun, param_set, args=(), gridsearch=False, num_cores=1,
     x0_guess = param_set.guess
     fit_guess = sciopt.OptimizeResult(success=True, x=x0_guess, fun=fun(x0_guess, *args), nfev=1)
     if gridsearch:
-        if param_set.constraints is not None and len(param_set.constraints):
-            valid = np.array([p for p in product(*param_set.grid_range) if
-                     np.all([con['fun'](p) >= 0 for con in param_set.constraints])])
-        else:
-            valid = np.array(list(product(*param_set.grid_range)))
+        valid = np.array(list(product(*param_set.grid_range)))
         if verbosity > 1:
             print(f"{TAB}{TAB}Grid search activated (grid size = {len(valid)})")
         t0 = timeit.default_timer()
@@ -142,7 +138,7 @@ def subject_estimation(fun, param_set, args=(), gridsearch=False, num_cores=1,
         ll_min_grid = np.min(negll_grid)
         grid_time = timeit.default_timer() - t0
         if verbosity > 1:
-            for i, p in enumerate(param_set.param_names_flat):
+            for i, p in enumerate(param_set._param_names_flat):
                 if p.startswith('type2_criteria') and not p.endswith('0'):
                     criterion_id = int(p.split('_')[-1])
                     criterion = param_set.guess[i-criterion_id:i+1].sum()
@@ -213,14 +209,14 @@ def subject_estimation(fun, param_set, args=(), gridsearch=False, num_cores=1,
                 if method == 'slsqp':
                     slsqp_epsilon_ = slsqp_epsilon if hasattr(slsqp_epsilon, '__len__') else [slsqp_epsilon]
                     for eps in slsqp_epsilon_:
-                        fit = sciopt.minimize(fun, x0, bounds=bounds, args=tuple(args), constraints=param_set.constraints,
+                        fit = sciopt.minimize(fun, x0, bounds=bounds, args=tuple(args),
                                               method='slsqp', options=dict(eps=eps))
                         if fit.fun < fit_best.fun:
                             fit_best = fit
                             best_solver = f"slsqp_{eps:.3g}_init{('guess', 'grid', 'global')[i]}"
                 else:
                     try:
-                        fit = sciopt.minimize(fun, x0, bounds=bounds, args=tuple(args), constraints=param_set.constraints,
+                        fit = sciopt.minimize(fun, x0, bounds=bounds, args=tuple(args),
                                               method=method)
                     except ValueError as e:
                         if 'violates bound constraints' in str(e) and (method == 'trust-constr') and check_x0_within_bounds(x0, bounds):
@@ -231,8 +227,7 @@ def subject_estimation(fun, param_set, args=(), gridsearch=False, num_cores=1,
                                 warnings.warn('SciPy trust-constr evaluated outside bounds despite a feasible x0. '
                                               'Using L-BFGS-B instead.')
                             method = 'L-BFGS-B'
-                            fit = sciopt.minimize(fun, x0, bounds=bounds, args=tuple(args),
-                                                  constraints=param_set.constraints, method=method)
+                            fit = sciopt.minimize(fun, x0, bounds=bounds, args=tuple(args), method=method)
                         else:
                             raise
 
@@ -532,7 +527,7 @@ def fe_only_full_cov_per_subject(
 
 
 
-def group_estimation(fun, nsubjects, params_init, bounds, idx_fe, idx_re,
+def group_estimation(fun, n_subjects, params_init, bounds, idx_fe, idx_re,
                      num_cores=1, max_iter=30,
                      sigma_floor=None, damping_mu=None, damping_sig=None, include_posterior_variance=False,
                      random_effect_method='iterative_map', verbosity=1):
@@ -551,7 +546,7 @@ def group_estimation(fun, nsubjects, params_init, bounds, idx_fe, idx_re,
     fun : callable
         Subject-level objective with signature ``fun(params, sub_ind)`` returning
         a negative log likelihood in constrained parameter space.
-    nsubjects : int
+    n_subjects : int
         Number of subjects.
     params_init : array-like, shape (nsubjects, nparams)
         Initial subject-level parameter estimates in constrained parameter space.
@@ -621,7 +616,7 @@ def group_estimation(fun, nsubjects, params_init, bounds, idx_fe, idx_re,
         damping_sig = 1 if damping_sig is None else damping_sig
         return _group_estimation_measurement_error_map(
             fun=fun,
-            nsubjects=nsubjects,
+            nsubjects=n_subjects,
             params_init=params_init,
             bounds=bounds,
             idx_fe=idx_fe,
@@ -688,7 +683,7 @@ def group_estimation(fun, nsubjects, params_init, bounds, idx_fe, idx_re,
         uparams_sd = None
 
     # outputs (updated each iteration; final kept)
-    x_se = np.full((nsubjects, nparams), np.nan, dtype=float)
+    x_se = np.full((n_subjects, nparams), np.nan, dtype=float)
     cov_theta_free = None  # list of (d_free,d_free) from last iteration
 
     def subject_loop_factory(uparams_init_ref, uparams_fe_ref, uparams_mean_ref, uparams_sd_ref):
@@ -782,9 +777,9 @@ def group_estimation(fun, nsubjects, params_init, bounds, idx_fe, idx_re,
 
         if num_cores > 1:
             with DillPool(num_cores) as pool:
-                out = list(pool.map(subject_loop, range(nsubjects)))
+                out = list(pool.map(subject_loop, range(n_subjects)))
         else:
-            out = [subject_loop(s) for s in range(nsubjects)]
+            out = [subject_loop(s) for s in range(n_subjects)]
 
         # Store subject MAP estimates and their local covariance estimates from
         # this iteration; these become the starting point for the next iteration.
@@ -857,7 +852,7 @@ def group_estimation(fun, nsubjects, params_init, bounds, idx_fe, idx_re,
     #     result.x_cov[:, *np.ix_(idx_free, idx_free)] = cov_arr
 
 
-    result.x_cov = np.full((nsubjects, nparams, nparams), np.nan, dtype=float)
+    result.x_cov = np.full((n_subjects, nparams, nparams), np.nan, dtype=float)
     if has_re:
         # keep your existing behavior in RE case (free-free only)
         cov_arr = np.stack(cov_theta_free, axis=0)  # (N,d_free,d_free)
@@ -870,11 +865,11 @@ def group_estimation(fun, nsubjects, params_init, bounds, idx_fe, idx_re,
             with DillPool(num_cores) as pool:
                 cov_full_list = list(pool.map(
                     lambda s: fe_only_full_cov_per_subject(s, fun, uparams_init, uparams_fe, idx_fe, idx_free, bounds),
-                    range(nsubjects)
+                    range(n_subjects)
                 ))
         else:
             cov_full_list = [fe_only_full_cov_per_subject(s, fun, uparams_init, uparams_fe, idx_fe, idx_free, bounds)
-                             for s in range(nsubjects)]
+                             for s in range(n_subjects)]
 
         result.x_cov = np.stack(cov_full_list, axis=0)  # (N,K,K)
 
