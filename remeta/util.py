@@ -915,7 +915,7 @@ def linearize_stimulus_evidence(stimuli, choices, difficulty_levels=None, method
             levels_final = levels
             if rolling_size == 'auto':
                 if rolling_size_auto_criterion < 1:
-                    rolling_size_auto_n_samples = min(1000, max(150, int(np.round(rolling_size_auto_criterion * n_samples))))
+                    rolling_size_auto_n_samples = min(5000, max(150, int(np.round(rolling_size_auto_criterion * n_samples))))
                     if verbosity:
                         print(f'\tUsing a minimum of {rolling_size_auto_n_samples} samples for each rolling window.')
                 else:
@@ -1112,14 +1112,16 @@ def print_dataset_characteristics(sim):
             print(f'{TAB}{p}: {np.array2string(np.array(v), precision=3)}')
         if sim.params_extra is not None:
             if 'type2_criteria_bias' in sim.params_extra:
-                print(f"{TAB}{TAB}[extra] Criterion bias: {sim.params_extra['type2_criteria_bias']:.4f}")
+                print(f"{TAB}{TAB}[extra] Criterion bias: {np.array2string(sim.params_extra['type2_criteria_bias'], precision=3)}")
             if 'type2_criteria_confidence_bias' in sim.params_extra:
-                print(f"{TAB}{TAB}[extra] Criterion-based confidence bias: {sim.params_extra['type2_criteria_confidence_bias']:.4f}")
+                print(f"{TAB}{TAB}[extra] Criterion-based confidence bias: {np.array2string(sim.params_extra['type2_criteria_confidence_bias'], precision=3)}")
             # if 'type2_criteria_absdev' in sim.params_extra:
             #     print(f"{TAB}{TAB}[extra] Criterion absolute deviation: {sim.params_extra['type2_criteria_absdev']:.4f}")
     print('..Descriptive statistics:')
-    print(f'{TAB}No. subjects: {sim.nsubjects}')
-    print(f"{TAB}No. samples: {np.array2string(np.array(sim.nsamples).squeeze(), separator=', ', threshold=3)}")
+    print(f'{TAB}No. subjects: {sim.n_subjects}')
+    print(f"{TAB}No. samples: {np.array2string(np.array(sim.n_samples).squeeze(), separator=', ', threshold=3)}")
+    if not sim.cfg.skip_type2 and 'type2_criteria' in sim.params:
+        print(f'{TAB}No. of discrete confidence levels: {len(sim.params['type2_criteria']) + 1}')
     if sim.type1_stats is not None:
         print(f"{TAB}Accuracy: {100 * sim.type1_stats['accuracy']:.1f}% correct")
         print(f"{TAB}d': {sim.type1_stats['dprime']:.1f}")
