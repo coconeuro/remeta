@@ -21,30 +21,33 @@ ds = remeta.load_dataset('default')  # load example dataset
 Output:
 ```
 ..Generative model:
-    Type 2 noise type: noisy_report
-    Type 2 noise distribution: truncated_norm_mode
+    Type 1 noise distribution: normal
+    Type 2 noise type: report
+    Type 2 noise distribution: beta_mode
 ..Generative parameters:
     type1_noise: 0.5
     type1_bias: -0.1
     type2_noise: 0.3
-    type2_criteria: [0.2 0.2 0.2 0.2]
-    Type 2 criteria (absolute): [0.2, 0.4, 0.6, 0.8]
-    Criterion bias: 0
+    type2_criteria: [0.25 0.5  0.75]
+        [extra] Criterion bias: 0.
+        [extra] Criterion-based confidence bias: 0.
 ..Descriptive statistics:
     No. subjects: 1
     No. samples: 2000
-    Performance: 86.5% correct
-    Choice bias: -3.1%
-    Confidence: 0.62
-    M-Ratio: 0.58
-    AUROC2: 0.69
+    No. of discrete confidence levels: 4
+    Accuracy: 85.2% correct
+    d': 2.1
+    Choice bias: -3.9%
+    Confidence: 0.65
+    M-Ratio: 0.95
+    AUROC2: 0.77
 ```
 
 The output provides information how the dataset was generated and some descriptive statistics.
 
 ```python
 rem = remeta.ReMeta()
-rem.fit(ds.stimuli, ds.choices, ds.confidence)
+rem.fit(ds.stimuli, ds.choices, ds.confidence, n_ratings=4)
 ```
 
 
@@ -52,40 +55,26 @@ Output (for fit):
 ```
 +++ Type 1 level +++
   Subject-level estimation (MLE)
-    .. finished (0.3 secs).
+    .. finished (0.2 secs).
   Final report
     Parameters estimates (subject-level fit)
-        [subject] type1_noise: 0.503
-        [subject] type1_bias: -0.0821
-    [subject] Neg. LL: 683.64
-    [subject] Fitting time: 0.25 secs
+        [subject] type1_noise: 0.510 ± 0.018
+        [subject] type1_bias: -0.099 ± 0.019
+    [subject] Log-likelihood: -717.84 (per sample: -0.3589)
+    [subject] Fitting time: 0.17 secs
 Type 1 level finished
-
 +++ Type 2 level +++
   Subject-level estimation (MLE)
-        Grid search activated (grid size = 2048)
-        Grid iteration 1000 / 2048
-        Grid iteration 2000 / 2048
-            [grid] type2_noise: 0.2641
-            [grid] type2_criteria_0: 0.1667
-            [grid] type2_criteria_1: 0.2 = gap | criterion = 0.4
-            [grid] type2_criteria_2: 0.2 = gap | criterion = 0.6
-            [grid] type2_criteria_3: 0.2 = gap | criterion = 0.8
-        Grid neg. LL: 3636.9
-        Grid runtime: 150.86 secs
-    .. finished (199.1 secs).
+    .. finished (128.9 secs).
   Final report
     Parameters estimates (subject-level fit)
-        [subject] type2_noise: 0.288
-        [subject] type2_criteria_0: 0.189
-        [subject] type2_criteria_1: 0.21 = gap | criterion = 0.399
-        [subject] type2_criteria_2: 0.206 = gap | criterion = 0.605
-        [subject] type2_criteria_3: 0.194 = gap | criterion = 0.798
-            [extra] type2_criteria_absolute: [0.189, 0.399, 0.605, 0.798]
-            [extra] type2_criteria_bias: -0.00211
-    [subject] Neg. LL: 3605.21
-    [subject] Fitting time: 198.89 secs
-Type 2 level finished
+        [subject] type2_noise: 0.312 ± 0.047
+        [subject] type2_criteria: [0.278 ± 0.012, 0.505 ± 0.014, 0.738 ± 0.018]
+            [extra] type2_criteria_bias: 0.016 ± 0.010
+            [extra] type2_criteria_confidence_bias: -0.016 ± 0.010
+    [subject] Log-likelihood: -2938.91 (per sample: -1.469)
+    [subject] Fitting time: 53.63 secs
+Type 2 level finished (128.9 secs)
 ```
 
 Since the dataset is based on simulation, we know the true parameters of the underlying generative model (see first output), which are quite close to the fitted parameters.
@@ -96,19 +85,19 @@ We can access the fitted parameters by invoking the `summary()` method on the `R
 # Access fitted parameters
 import numpy as np
 result = rem.summary()
-for k, v in result.model.params.items():
+for k, v in result.params.items():
     print(f'{k}: {np.array2string(np.array(v), precision=3)}')
 ```
 
 Ouput:
 ```
-type1_noise: 0.503
-type1_bias: -0.082
-type2_noise: 0.288
-type2_criteria: [0.189 0.21  0.206 0.194]
+type1_noise: 0.51
+type1_bias: -0.099
+type2_noise: 0.312
+type2_criteria: [0.278 0.505 0.738]
 ```
 
-By default, the model fits parameters for type 1 noise (`type1_noise`) and a type 1 bias (`type1_bias`), as well as metacognitive 'type 2' noise (`type2_noise`) and 4 confidence criteria (`type2_criteria`). Moreover, by default the model assumes that metacognitive noise occurs at the stage of the confidence report (setting `type2_noise_type='noisy_report'`) and that type 2 metacognitive noise can be described by a truncated normal distribution (setting `type2_noise_dist='truncated_norm_mode'`).
+By default, the model fits parameters for type 1 noise (`type1_noise`) and a type 1 bias (`type1_bias`), as well as metacognitive 'type 2' noise (`type2_noise`) and confidence criteria (`type2_criteria`). Moreover, by default the model assumes that metacognitive noise occurs at the stage of the confidence report (setting `type2_noise_type='noisy_report'`) and that type 2 metacognitive noise can be described by a truncated normal distribution (setting `type2_noise_dist='truncated_norm_mode'`).
 
 All settings can be changed via the `Configuration` object which is optionally passed to the `ReMeta` instance. For example, to change the metacognitive noisy type to "noisy-readout":
 
