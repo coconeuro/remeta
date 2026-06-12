@@ -172,32 +172,32 @@ class Configuration(ReprMixin):
     ## Type 1
 
     param_type1_noise: Parameter = field(
-        default=Parameter(enable=1, guess=0.5, bounds=[0.001, 10], grid_range=np.linspace(0.1, 1, 8), default=0.01, model='normal'),
+        default=Parameter(enable=True, guess=0.5, bounds=[0.001, 10], grid_range=np.linspace(0.1, 1, 8), default=0.01, model='normal'),
         metadata={'description': """ 
         Type 1 noise."""
     })
     param_type1_thresh: Parameter = field(
-        default=Parameter(enable=0, guess=0, bounds=[0, 1], grid_range=np.linspace(0, 0.2, 5), default=0),
+        default=Parameter(enable=False, guess=0, bounds=[0, 1], grid_range=np.linspace(0, 0.2, 5), default=0),
         metadata={'description': """ 
         Type 1 threshold."""
     })
     param_type1_bias: Parameter = field(
-        default=Parameter(enable=1, guess=0, bounds=[-1, 1], grid_range=np.linspace(-0.2, 0.2, 8), default=0),
+        default=Parameter(enable=True, guess=0, bounds=[-1, 1], grid_range=np.linspace(-0.2, 0.2, 8), default=0),
         metadata={'description': """ 
         Type 1 bias."""
     })
     param_type1_nonlinear_gain: Parameter = field(
-        default=Parameter(enable=0, guess=0, bounds=[-8 / 9, 10], grid_range=np.linspace(-0.5, 1, 5), default=0),
+        default=Parameter(enable=False, guess=0, bounds=[-8 / 9, 10], grid_range=np.linspace(-0.5, 1, 5), default=0),
         metadata={'description': """ 
         Gain parameter for nonlinear encoding (higher values -> stronger nonlinearity)."""
     })
     param_type1_nonlinear_scale: Parameter = field(
-        default=Parameter(enable=0, guess=1, bounds=[0.01, 10], grid_range=np.linspace(0.01, 2, 5), default=None),
+        default=Parameter(enable=False, guess=1, bounds=[0.01, 10], grid_range=np.linspace(0.01, 2, 5), default=None),
         metadata={'description': """ 
         Scale parameter for the nonlinearity (higher values -> non-linearity kicks in later)."""
     })
     param_type1_noise_heteroscedastic: Parameter = field(
-        default=Parameter(enable=0, guess=0, bounds=[0, 10], grid_range=np.linspace(0, 1, 5), model='multiplicative', default=0),
+        default=Parameter(enable=False, guess=0, bounds=[0, 10], grid_range=np.linspace(0, 1, 5), model='multiplicative', default=0),
         metadata={'description': """ 
         Signal-dependent type 1 noise. Specify the signal dependency via the `.model` attribute of the 
         parameter. Default is `'multiplicative'`, which corresponds to Weber's law with a noise floor. In this case, 
@@ -208,25 +208,25 @@ class Configuration(ReprMixin):
     ## Type 2
 
     param_type2_noise: Parameter = field(
-        default=Parameter(enable=1, guess=0.1, bounds=[0.005, 2], grid_range=np.linspace(0.01, 1, 8), default=0.01),
+        default=Parameter(enable=True, guess=0.1, bounds=[0.005, 2], grid_range=np.linspace(0.01, 1, 8), default=0.01),
         metadata={'description': """ 
         Metacognitive noise. May characterize metacognitive noise of either a noisy-readout, noisy-report or 
         noisy-temperature model."""
     })
+    param_type2_criteria: Parameter = field(
+        default=Parameter(enable=True, guess='equispaced', grid_range='equispaced', default='equispaced', bounds=[1e-8, 1]),
+        metadata={'description': """ 
+        Confidence criteria."""
+    })
     param_type2_evidence_bias: Parameter = field(
-        default=Parameter(enable=0, guess=1, bounds=[0.5, 2], grid_range=np.linspace(0.5, 2, 8), default=1),
+        default=Parameter(enable=False, guess=1, bounds=[0.5, 2], grid_range=np.linspace(0.5, 2, 8), default=1),
         metadata={'description': """ 
         Parameter for a multiplicative metacognitive bias loading on evidence."""
     })
     param_type2_confidence_bias: Parameter = field(
-        default=Parameter(enable=0, guess=1, bounds=[0.5, 2], grid_range=np.linspace(0.5, 2, 8), default=1),
+        default=Parameter(enable=False, guess=1, bounds=[0.5, 2], grid_range=np.linspace(0.5, 2, 8), default=1),
         metadata={'description': """ 
         Parameter for a power-law metacognitive bias loading on confidence."""
-    })
-    param_type2_criteria: Parameter = field(
-        default=Parameter(enable=3, guess='equispaced', grid_range='equispaced', default='equispaced', bounds=[1e-8, 1]),
-        metadata={'description': """ 
-        Confidence criteria."""
     })
 
 
@@ -280,12 +280,12 @@ class Configuration(ReprMixin):
         fitted parameters. The likelihood of true parameters is returned (and printed)."""
     })
 
-    initilialize_fitting_at_true_params: bool = field(default=False, metadata={'description': """ 
+    initialize_fitting_at_true_params: bool = field(default=False, metadata={'description': """ 
         If `True`, initialize the parameter fitting procedure at the true parameters. True parameters must 
         have been passed via `true_params`."""
     })
 
-    accept_mispecified_model: bool = field(default=False, metadata={'description': """ 
+    accept_misspecified_model: bool = field(default=False, metadata={'description': """ 
         If `True`, ignore warnings about user-specified settings."""
     })
 
@@ -296,16 +296,19 @@ class Configuration(ReprMixin):
 
     ### Private attributes (do not change)
 
+    _param_names_type1 = ('noise', 'bias', 'noise_heteroscedastic', 'nonlinear_scale', 'nonlinear_gain', 'thresh')
     _param_type1_noise: Parameter | list[Parameter] = None
+    _param_type1_bias: Parameter | list[Parameter] = None
     _param_type1_noise_heteroscedastic: Parameter | list[Parameter] = None
     _param_type1_nonlinear_scale: Parameter | list[Parameter] = None
     _param_type1_nonlinear_gain: Parameter | list[Parameter] = None
     _param_type1_thresh: Parameter | list[Parameter] = None
-    _param_type1_bias: Parameter | list[Parameter] = None
+
+    _param_names_type2 = ('noise', 'criteria', 'evidence_bias', 'confidence_bias')
     _param_type2_noise: Parameter = None
+    _param_type2_criteria: list[Parameter] = None
     _param_type2_evidence_bias: Parameter = None
     _param_type2_confidence_bias: list[Parameter] = None
-    _param_type2_criteria: list[Parameter] = None
 
     _paramset_type1: ParameterSet = None
     _paramset_type2: ParameterSet = None
@@ -357,7 +360,7 @@ class Configuration(ReprMixin):
 
             if self.param_type2_noise.model is None:
                 if self.type2_noise_type == 'report':
-                    if (self.param_type2_criteria.enable):
+                    if self.param_type2_criteria.enable:
                         self.param_type2_noise.model = 'beta_mode'
                     else:
                         self.param_type2_noise.model = 'truncated_normal_mode'
@@ -383,9 +386,12 @@ class Configuration(ReprMixin):
             if self.type2_binsize is None:
                 self.type2_binsize = 0.01
 
-        self._prepare_params_all()
-
         self._check_compatibility(generative_mode=generative_mode, silence_warnings=silence_warnings)
+
+        if not self.param_type2_criteria.enable:
+            # In case of confidence criteria, the final parameter set depends on the number of confidence
+            # levels and will only be determined during fitting (cf. _prepare_confidence_criteria())
+            self._prepare_params_all()
 
         if self.print_configuration:
             self.print()
@@ -393,7 +399,7 @@ class Configuration(ReprMixin):
 
     def _check_compatibility(self, generative_mode=False, silence_warnings=False):
 
-        if not self.accept_mispecified_model:
+        if not self.accept_misspecified_model:
 
             if not self.param_type1_noise.enable:
                 raise ValueError("Type 1 noise must be enabled.")
@@ -424,32 +430,29 @@ class Configuration(ReprMixin):
                     if self.param_type2_criteria.enable and self.param_type2_evidence_bias.enable:
                         if not silence_warnings:
                             warnings.warn(
-                                'Fitting type2_param_criteria in combination with type2_param_evidence_bias.enable=1\n'
+                                'Fitting type2_param_criteria in combination with type2_param_evidence_bias.enable=True\n'
                                 'can lead to biased parameter inferences. Use with caution.')
 
     def _prepare_params_type1(self):
-        # if self.paramset_type1 is None:
 
-            param_names_type1 = []
-            params_type1 = ('noise', 'noise_heteroscedastic', 'nonlinear_gain', 'nonlinear_scale', 'thresh', 'bias')
-            for param in params_type1:
-                if getattr(self, f'param_type1_{param}').enable:
-                    param_names_type1 += [f'type1_{param}']
-                    # if getattr(self, f'_param_type1_{param}') is None:
-                    param_definition = getattr(self, f'param_type1_{param}')
-                    if getattr(self, f'param_type1_{param}').enable == 2:
-                        setattr(self, f'_param_type1_{param}', [param_definition, param_definition])
+        for param in self._param_names_type1:
+            if getattr(self, f'param_type1_{param}').enable:
+                # if getattr(self, f'_param_type1_{param}') is None:
+                param_definition = getattr(self, f'param_type1_{param}')
+                if getattr(self, f'param_type1_{param}').asym:
+                    setattr(self, f'_param_type1_{param}', [param_definition, param_definition])
+                else:
+                    setattr(self, f'_param_type1_{param}', param_definition)
+                if self.true_params is not None and self.initialize_fitting_at_true_params and f'type1_{param}' in self.true_params:
+                    if getattr(self, f'param_type1_{param}').asym:
+                        for i in range(2):
+                            getattr(self, f'_param_type1_{param}')[i].guess = self.true_params[f'type1_{param}'][i]
                     else:
-                        setattr(self, f'_param_type1_{param}', param_definition)
-                    if self.true_params is not None and self.initilialize_fitting_at_true_params and f'type1_{param}' in self.true_params:
-                        if (param_len := getattr(self, f'param_type1_{param}').enable) > 1:
-                            for i in range(param_len):
-                                getattr(self, f'_param_type1_{param}')[i].guess = self.true_params[f'type1_{param}'][i]
-                        else:
-                            getattr(self, f'_param_type1_{param}').guess = self.true_params[f'type1_{param}']
+                        getattr(self, f'_param_type1_{param}').guess = self.true_params[f'type1_{param}']
 
-            parameters = {k: getattr(self, f"_param_{k}") for k in param_names_type1}
-            self._paramset_type1 = ParameterSet(parameters, param_names_type1)
+        param_names_type1 = [f'type1_{p}' for p in self._param_names_type1 if getattr(self, f'param_type1_{p}').enable]
+        parameters = {k: getattr(self, f"_param_{k}") for k in param_names_type1}
+        self._paramset_type1 = ParameterSet(parameters, param_names_type1)
 
     def _prepare_params_type2(self):
 
@@ -508,83 +511,66 @@ class Configuration(ReprMixin):
             self.param_type2_noise.grid_range = np.exp(np.linspace(np.log(self.param_type2_noise.bounds[0]),
                                                                    np.log(self.param_type2_noise.bounds[1]), 10)[1:-1])
 
-        param_names_type2 = []
-        params_type2 = ('noise', 'evidence_bias', 'confidence_bias')
-        for param in params_type2:
+        for param in self._param_names_type2:
             if getattr(self, f'param_type2_{param}').enable:
-                param_names_type2 += [f'type2_{param}']
                 # if getattr(self, f'_param_type2_{param}') is None:
                 param_definition = getattr(self, f'param_type2_{param}')
                 setattr(self, f'_param_type2_{param}', param_definition.copy())
-                if self.true_params is not None and self.initilialize_fitting_at_true_params and f'type2_{param}' in self.true_params:
+                if self.true_params is not None and self.initialize_fitting_at_true_params and f'type2_{param}' in self.true_params:
                     getattr(self, f'_param_type2_{param}').guess = self.true_params[f'type2_{param}']
 
-
-        if self.param_type2_criteria.preset is not None:
-            self.param_type2_criteria.enable = 0
-            if listlike(self.param_type2_criteria.preset):
-                self._n_conf_levels = len(self.param_type2_criteria.preset) + 1
-            elif isinstance(self.param_type2_criteria.preset, int):
-                self._n_conf_levels = self.param_type2_criteria.preset + 1
-                self.param_type2_criteria.preset = np.arange(1/self._n_conf_levels, 1-1e-10, 1/self._n_conf_levels)
-            else:
-                raise ValueError('param_type2_criteria.preset must either be a list of criteria or '
-                                 'an integer indicating the number of (equispaced) criteria.')
-
-
         if self.param_type2_criteria.enable:
-            self._n_conf_levels = self.param_type2_criteria.enable + 1
-            param_names_type2 += [f'type2_criteria']
-            initialize_true = (self.initilialize_fitting_at_true_params and
-                               self.true_params is not None and 'type2_criteria' in self.true_params)
-
-            # internally, we handle criteria as criterion gaps!
-            setattr(self, f'_param_type2_criteria',
-                    [Parameter(
-                       guess=self.true_params['type2_criteria'][i] if initialize_true
-                                else (1 / self._n_conf_levels if self.param_type2_criteria.guess == 'equispaced'
-                                      else self.param_type2_criteria_guesses[i]),
-                       bounds=self.param_type2_criteria.bounds,
-                       grid_range=np.linspace(0.05, 2 / self._n_conf_levels, 4) if
-                       self.param_type2_criteria.grid_range == 'equispaced' else self.param_type2_criteria_grid_ranges[i],
-                       default=1/self._n_conf_levels if self.param_type2_criteria.default == 'equispaced' else self.param_type2_criteria_default,
-                    )
-                     for i in range(self._n_conf_levels - 1)]
-                    )
             if self.true_params is not None:
                 if isinstance(self.true_params, dict):
-                    # if 'type2_criteria' not in self.true_params:
-                    #     raise ValueError('type2_criteria are missing from cfg.true_params')
                     if 'type2_criteria' in self.true_params:
                         self.true_params.update(
-                            # type2_criteria_absolute=[np.sum(self.true_params['type2_criteria'][:i+1]) for i in range(len(self.true_params['type2_criteria']))],
                             type2_criteria_bias=np.mean(self.true_params['type2_criteria']) - 0.5,
                             type2_criteria_bias_sem=0,
                             type2_criteria_confidence_bias=0.5 - np.mean(self.true_params['type2_criteria']),
-                            # type2_criteria_bias_mult=np.mean(self.true_params['type2_criteria']) / 0.5,
-                            # type2_criteria_confidence_bias_mult=np.mean(self.true_params['type2_criteria']) / 0.5,
-                            # type2_criteria_absdev=round(np.abs(np.array(self.true_params['type2_criteria']) -
-                            #         np.arange(1/self._n_conf_levels, 1-1e-10, 1/self._n_conf_levels)).mean(), 10)
                         )
                 elif isinstance(self.true_params, list):
                     for s in range(len(self.true_params)):
-                        # if 'type2_criteria' not in self.true_params[s]:
-                        #     raise ValueError(f'type2_criteria are missing from cfg.true_params (subject {s})')
                         if 'type2_criteria' in self.true_params[s]:
                             self.true_params[s].update(
-                                # type2_criteria_absolute=[np.sum(self.true_params[s]['type2_criteria'][:i+1]) for i in range(len(self.true_params[s]['type2_criteria']))],
                                 type2_criteria_bias=np.mean(self.true_params[s]['type2_criteria']) - 0.5,
                                 type2_criteria_bias_sem=0,
                                 type2_criteria_confidence_bias=0.5 - np.mean(self.true_params[s]['type2_criteria']),
-                                # type2_criteria_absdev=round(np.abs(np.array(self.true_params[s]['type2_criteria']) -
-                                #     np.arange(1/self._n_conf_levels, 1-1e-10, 1/self._n_conf_levels)).mean())
                             )
 
+        if not self.param_type2_criteria.enable:
+            # In case of confidence criteria, the final parameter set depends on the number of confidence
+            # levels and will only be determined during fitting (cf. _prepare_confidence_criteria())
+            param_names_type2 = [f'type2_{p}' for p in self._param_names_type2 if getattr(self, f'param_type2_{p}').enable]
+            parameters = {k: getattr(self, f"_param_{k}") for k in param_names_type2}
+            self._paramset_type2 = ParameterSet(parameters, param_names_type2)
+
+
+    def _prepare_confidence_criteria(self, n_ratings):
+
+        if n_ratings is None:
+            raise ValueError('The number of confidence ratings cannot be None')
+
+        self._n_conf_levels = n_ratings
+
+        initialize_true = (self.initialize_fitting_at_true_params and
+                           self.true_params is not None and 'type2_criteria' in self.true_params)
+        setattr(self, f'_param_type2_criteria',
+                [Parameter(
+                   guess=self.true_params['type2_criteria'][i] if initialize_true
+                            else (1 / self._n_conf_levels if self.param_type2_criteria.guess == 'equispaced'
+                                  else self.param_type2_criteria_guesses[i]),
+                   bounds=self.param_type2_criteria.bounds,
+                   grid_range=np.linspace(0.05, 2 / self._n_conf_levels, 4) if
+                   self.param_type2_criteria.grid_range == 'equispaced' else self.param_type2_criteria_grid_ranges[i],
+                   default=1/self._n_conf_levels if self.param_type2_criteria.default == 'equispaced' else self.param_type2_criteria_default,
+                )
+                 for i in range(self._n_conf_levels - 1)]
+                )
+
+        param_names_type2 = [f'type2_{p}' for p in self._param_names_type2 if getattr(self, f'param_type2_{p}').enable]
         parameters = {k: getattr(self, f"_param_{k}") for k in param_names_type2}
         self._paramset_type2 = ParameterSet(parameters, param_names_type2)
-
-
-        self.check_type2_constraints()
+        self._prepare_params_all()
 
 
     def _prepare_params_all(self):
@@ -595,29 +581,6 @@ class Configuration(ReprMixin):
             parameters_all = {**self._paramset_type1.parameters, **self._paramset_type2.parameters}
             param_names_all = self._paramset_type1.param_names + self._paramset_type2.param_names
             self._paramset = ParameterSet(parameters_all, param_names_all)
-            # for k, attr in self.paramset_type2.__dict__.items():
-            #     attr_old = getattr(self.paramset, k)
-            #     if isinstance(attr, list):
-            #         attr_new = attr_old + attr
-            #     elif isinstance(attr, dict):
-            #         attr_new = {**attr_old, **attr}
-            #     elif isinstance(attr, np.ndarray):
-            #         if attr.ndim == 1:
-            #             attr_new = np.hstack((attr_old, attr))
-            #         else:
-            #             attr_new = np.vstack((attr_old, attr))
-            #     elif isinstance(attr, int):
-            #         attr_new = attr_old + attr
-            #     elif attr is None:
-            #         if attr_old is None:
-            #             attr_new = None
-            #         else:
-            #             raise ValueError(f'Type 2 attribute is None, but type 1 attribute is not.')
-            #     else:
-            #         raise ValueError(f'Unexpected type {type(attr)}')
-            #     setattr(self.paramset, k, attr_new)
-
-
 
 
     def print(self):
@@ -632,6 +595,3 @@ class Configuration(ReprMixin):
         txt = f'{self.__class__.__name__}\n'
         txt += '\n'.join([f'\t{k}: {v}' for k, v in self.__dict__.items()])
         return txt
-
-    def check_type2_constraints(self):
-        pass
