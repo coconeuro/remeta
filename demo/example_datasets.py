@@ -16,8 +16,9 @@ mode = 'default'
 
 skip_type2 = False
 if mode == 'default':
-    nsubjects = 1
-    nsamples = 2000
+    n_subjects = 1
+    n_samples = 2000
+    n_ratings = 4
     seed = 1
     stim_levels = 4
     params = dict(
@@ -29,8 +30,9 @@ if mode == 'default':
     cfg = remeta.Configuration()
     # cfg.param_type2_noise.model = 'truncated_normal_mode'
 if mode == 'group':
-    nsubjects = 3
-    nsamples = 1000
+    n_subjects = 3
+    n_samples = 1000
+    n_ratings = 4
     seed = 1
     stim_levels = 4
     params = dict(
@@ -43,8 +45,9 @@ if mode == 'group':
     cfg.param_type1_bias.group = 'random'
     # cfg.param_type2_noise.model = 'truncated_normal_mode'
 elif mode == 'type1_only':
-    nsubjects = 1
-    nsamples = 2000
+    n_subjects = 1
+    n_samples = 2000
+    n_ratings = None
     seed = 1
     stim_levels = 4
     params = dict(
@@ -54,8 +57,9 @@ elif mode == 'type1_only':
     cfg = remeta.Configuration()
     cfg.skip_type2 = True
 elif mode == 'type1_complex':
-    nsubjects = 1
-    nsamples = 2000
+    n_subjects = 1
+    n_samples = 2000
+    n_ratings = None
     seed = 1
     stim_levels = 50
     params = dict(
@@ -64,13 +68,14 @@ elif mode == 'type1_complex':
         type1_bias=[0.6, 0.1],
     )
     cfg = remeta.Configuration()
-    cfg.param_type1_noise.enable = 2
-    cfg.param_type1_thresh.enable = 1
-    cfg.param_type1_bias.enable = 2
+    cfg.param_type1_noise.asym = True
+    cfg.param_type1_thresh.enable = True
+    cfg.param_type1_bias.asym = True
     cfg.skip_type2 = True
 elif mode == 'type2_multiplicative_bias':
-    nsubjects = 1
-    nsamples = 2000
+    n_subjects = 1
+    n_samples = 2000
+    n_ratings = None
     seed = 7
     stim_levels = 4
     params = dict(
@@ -81,12 +86,13 @@ elif mode == 'type2_multiplicative_bias':
     )
     cfg = remeta.Configuration()
     # cfg.type2_fitting_type = 'continuous'
-    cfg.param_type2_criteria.enable = 0
-    cfg.param_type2_evidence_bias.enable = 1
+    cfg.param_type2_criteria.enable = False
+    cfg.param_type2_evidence_bias.enable = True
     # cfg.param_type2_noise.model = 'truncated_normal_mode'
 elif mode == 'noisy_readout':
-    nsubjects = 1
-    nsamples = 2000
+    n_subjects = 1
+    n_samples = 2000
+    n_ratings = 4
     seed = 5
     stim_levels = 4
     params = dict(
@@ -99,8 +105,9 @@ elif mode == 'noisy_readout':
     cfg.type2_noise_type = 'readout'
     # cfg.param_type2_noise.model = 'lognormal_mode'
 elif mode == 'noisy_temperature':
-    nsubjects = 1
-    nsamples = 2000
+    n_subjects = 1
+    n_samples = 2000
+    n_ratings = 4
     seed = 1
     stim_levels = 4
     params = dict(
@@ -115,7 +122,7 @@ elif mode == 'noisy_temperature':
 
 
 np.random.seed(seed)
-data = remeta.simulate(nsubjects=nsubjects, nsamples=nsamples, params=params, cfg=cfg, custom_stimuli=None, verbosity=True,
+data = remeta.simulate(n_subjects=n_subjects, n_samples=n_samples, n_ratings=n_ratings, params=params, cfg=cfg, custom_stimuli=None, verbosity=True,
                        stim_levels=stim_levels, squeeze=True, compute_stats=True)
 
 path = os.path.join(pathlib.Path(__file__).parent.resolve(), '..', 'remeta/demo_data', f'example_data_{mode}.pkl.gz')
