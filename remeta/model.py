@@ -75,6 +75,7 @@ class ReMeta:
         stimuli: list[float] | list[list[float]]  | np.typing.NDArray[float],
         choices: list[float] | list[list[float]]  | np.typing.NDArray[float],
         confidence: list[float] | list[list[float]]  | np.typing.NDArray[float] = None,
+        n_ratings : int = None,
         linearize: bool = False,
         linearize_kwargs: dict = None,
         verbosity: int = 1,
@@ -85,7 +86,7 @@ class ReMeta:
         Usage:
             ```
             rem = ReMeta()
-            rem.fit(stimuli, choices, confidence)
+            rem.fit(stimuli, choices, confidence, [n_ratings, ...])
             ```
 
         Args:
@@ -93,6 +94,7 @@ class ReMeta:
             choices: 1d or 2d array or list of choices (coded as -1/1 or 0/1)
             confidence: 1d or 2d array or list of confidence ratings (normalized to the range 0-1)
             linearize: Perform stimulus linearization
+            n_ratings: Numer of discrete confidence ratings (only relevant if modeling of confidence criteria is enabled)
             linearize_kwargs: Keyword arguments for stimulus linearization
             verbosity: verbosity level (possible values: 0, 1, 2)
             silence_warnings: if `True`, warnings during model fitting are supressed.
@@ -106,12 +108,12 @@ class ReMeta:
 
         self.result = Summary(self.data, self.cfg)
 
-        self.fit_type1(verbosity=verbosity, store_final_results=self.cfg.skip_type2,
+        self.fit_type1(verbosity=verbosity, _store_final_results=self.cfg.skip_type2,
                        silence_warnings=silence_warnings,
                        _called_from_fit=True)
 
         if not self.cfg.skip_type2:
-            self.fit_type2(verbosity=verbosity, silence_warnings=silence_warnings)
+            self.fit_type2(n_ratings=n_ratings, verbosity=verbosity, silence_warnings=silence_warnings)
 
         return self
 
@@ -122,7 +124,7 @@ class ReMeta:
         silence_warnings: bool = False):
         if verbosity >= 1:
             print(f'Performing linearization of stimulus magnitude')
-        if (self.data.nsubjects == 1) and not silence_warnings:
+        if (self.data.n_subjects == 1) and not silence_warnings:
             warnings.warn('Linearization of stimulus magnitude is requested, but data of only a single '
                           'participant were passed. It is recommended to combine stimulus linearization '
                           'with a group-level fit.')
@@ -142,11 +144,11 @@ class ReMeta:
         stimuli: None | list[float] | list[list[float]]  | np.typing.NDArray[float] = None,
         choices: None | list[float] | list[list[float]]  | np.typing.NDArray[float] = None,
         confidence: None | list[float] | list[list[float]]  | np.typing.NDArray[float] = None,
-        store_final_results: bool = True,
         linearize: bool = False,
         linearize_kwargs: dict = None,
         verbosity: int = 1,
         silence_warnings: bool = False,
+        _store_final_results: bool = True,
         _called_from_fit: bool = False
     ):
         """
@@ -161,12 +163,12 @@ class ReMeta:
             stimuli: 1d or 2d array or list of signed stimulus intensities
             choices: 1d or 2d array or list of choices (coded as -1/1 or 0/1)
             confidence: 1d or 2d array or list of confidence ratings (normalized to the range 0-1)
-            store_final_results: if `True`, save final results. Mostly used internally - will be set to `False`,
-                if followed by `fit_type2`.
             linearize: Perform stimulus linearization
             linearize_kwargs: Keyword arguments for stimulus linearization
             verbosity: verbosity level (possible values: 0, 1, 2)
             silence_warnings: if `True`, warnings during model fitting are supressed.
+            _store_final_results: if `True`, save final results. Internal parameter - will be set to `False`,
+                if followed by `fit_type2`.
             _called_from_fit: internal variable passed by self.fit()
         """
 
@@ -181,12 +183,12 @@ class ReMeta:
                                             silence_warnings=silence_warnings)
         if verbosity >= 1:
             print(f'Dataset characteristics:')
-            print(f'{TAB}No. subjects: {self.data.nsubjects}')
-            print(f"{TAB}No. samples: {np.array2string(np.array(self.data.nsamples).squeeze(), separator=', ', threshold=3)}")
+            print(f'{TAB}No. subjects: {self.data.n_subjects}')
+            print(f"{TAB}No. samples: {np.array2string(np.array(self.data.n_samples).squeeze(), separator=', ', threshold=3)}")
             print(f'{TAB}Accuracy: {100*self.data.stats.accuracy:.1f}% correct')
             print(f"{TAB}d': {self.data.stats.dprime:.3f}")
             print(f"{TAB}Choice bias: {100*self.data.stats.choice_bias:.1f}%")
-            if not self.cfg.skip_type2 and not store_final_results:
+            if not self.cfg.skip_type2 and not _store_final_results:
                 print(f"{TAB}Mean confidence: {self.data.stats.mean_confidence:.3f} "
                       f"(min: {min(map(lambda x: np.min(x), self.data.c_conf)):.3f},"
                       f" max: {max(map(lambda x: np.max(x), self.data.c_conf)):.3f})")
@@ -202,17 +204,17 @@ class ReMeta:
                                             'as zero instead of using quasi-Newton approximations.')
 
             fits_type1_subject, fit_type1_group = None, None
-            if self.cfg._paramset_type1.nparams > 0:
+            if self.cfg._paramset_type1.n_params > 0:
 
                 if verbosity:
                     print(f'{SP2}Subject-level estimation (MLE)')
                     tind = timeit.default_timer()
 
                 # Single-subject fits via MLE
-                use_multiproc_for_subject_loop = (self.cfg._optim_num_cores >= 8) and (self.data.nsubjects >= 8)
+                use_multiproc_for_subject_loop = (self.cfg._optim_num_cores >= 8) and (self.data.n_subjects >= 8)
                 def subject_loop(s):
-                    if (verbosity > 0) and (self.data.nsubjects > 1):
-                        print(f'{TAB} Subject {s + 1} / {self.data.nsubjects}')
+                    if (verbosity > 0) and (self.data.n_subjects > 1):
+                        print(f'{TAB} Subject {s + 1} / {self.data.n_subjects}')
                     return subject_estimation(
                         self.compute_type1_negll, self.cfg._paramset_type1, args=[s],
                         gridsearch=self.cfg.optim_type1_gridsearch,
@@ -226,31 +228,31 @@ class ReMeta:
                     )
                 if use_multiproc_for_subject_loop:
                     with DillPool(self.cfg._optim_num_cores) as pool:
-                        fits_type1_subject = pool.map(subject_loop, range(self.data.nsubjects))
+                        fits_type1_subject = pool.map(subject_loop, range(self.data.n_subjects))
                 else:
-                    fits_type1_subject = [None for _ in range(self.data.nsubjects)]
-                    for s in range(self.data.nsubjects):
+                    fits_type1_subject = [None for _ in range(self.data.n_subjects)]
+                    for s in range(self.data.n_subjects):
                         fits_type1_subject[s] = subject_loop(s)
                 # Store single-subject results
-                params_subject = [fits_type1_subject[s].x for s in range(self.data.nsubjects)]
-                params_hessian_subject = [fits_type1_subject[s].hessian for s in range(self.data.nsubjects)]
+                params_subject = [fits_type1_subject[s].x for s in range(self.data.n_subjects)]
+                params_hessian_subject = [fits_type1_subject[s].hessian for s in range(self.data.n_subjects)]
                 self.result.type1.subject.store(
                     'type1', self.cfg, self.data, self.compute_type1_negll, params_subject,
                     hessian=params_hessian_subject, fit=fits_type1_subject,
-                    execution_time=np.sum([fits_type1_subject[s].execution_time for s in range(self.data.nsubjects)])
+                    execution_time=np.sum([fits_type1_subject[s].execution_time for s in range(self.data.n_subjects)])
                 )
 
                 if verbosity:
                     print(f'{TAB}.. finished ({timeit.default_timer() - tind:.1f} secs).')
 
-                if self.data.nsubjects > 1:
-                    idx_fe = np.array([i for i, p in enumerate(self.cfg._paramset_type1.parameters_flat.values()) if p.group == 'fixed'])
-                    idx_re = np.array([i for i, p in enumerate(self.cfg._paramset_type1.parameters_flat.values()) if p.group == 'random'])
+                if self.data.n_subjects > 1:
+                    idx_fe = np.array([i for i, p in enumerate(self.cfg._paramset_type1._parameters_flat.values()) if p.group == 'fixed'])
+                    idx_re = np.array([i for i, p in enumerate(self.cfg._paramset_type1._parameters_flat.values()) if p.group == 'random'])
                     if (len(idx_fe) > 0) or (len(idx_re) > 0):
 
                         fit_type1_group = group_estimation(
                             fun=self.compute_type1_negll,
-                            nsubjects=self.data.nsubjects,
+                            n_subjects=self.data.n_subjects,
                             params_init=params_subject,
                             bounds=self.cfg._paramset_type1.bounds,
                             idx_fe=idx_fe,
@@ -265,9 +267,9 @@ class ReMeta:
                         self.result.type1.init_group()
                         self.result.type1.group.store(
                             'type1', self.cfg, self.data, self.compute_type1_negll,
-                            params=[fit_type1_group.x[s] for s in range(self.data.nsubjects)],
-                            params_se=[fit_type1_group.x_se[s] for s in range(self.data.nsubjects)],
-                            params_cov=[fit_type1_group.x_cov[s] for s in range(self.data.nsubjects)],
+                            params=[fit_type1_group.x[s] for s in range(self.data.n_subjects)],
+                            params_se=[fit_type1_group.x_se[s] for s in range(self.data.n_subjects)],
+                            params_cov=[fit_type1_group.x_cov[s] for s in range(self.data.n_subjects)],
                             pop_mean_sd=fit_type1_group.x_re_pop_mean_sd,
                             execution_time=fit_type1_group.execution_time
                         )
@@ -277,7 +279,7 @@ class ReMeta:
                 self.result.type1.report_fit(self.cfg)
             self.type1_is_fitted = True
 
-        if store_final_results:
+        if _store_final_results:
             self.result.store(store_type1_only=True)
 
         if verbosity:
@@ -286,9 +288,31 @@ class ReMeta:
         return self
 
 
-    def fit_type2(self, verbosity=1, silence_warnings=False):
+    def fit_type2(self, n_ratings=None, verbosity=1, silence_warnings=False):
 
         t0 = timeit.default_timer()
+
+        if self.cfg.param_type2_criteria.enable:
+            if n_ratings is None:
+                n_ratings = 4
+                n_unique_ratings = len(np.unique(self.data.c_conf))
+                if n_unique_ratings > 10:
+                    # assume continuous confidence ratings
+                    print('Fitting of confidence criteria is enabled, but `n_ratings` was not passed. Using the '
+                          'default of 4 confidence ratings / 3 confidence criteria. To suppress this message, pass '
+                          '`n_ratings=X` to the `fit` method.')
+                elif not silence_warnings:
+                    # In case of discrete confidence ratings, using the default n_ratings=4 is even more
+                    # problematic and we hance raise a warning.
+                    warnings.warn(
+                        'Fitting of confidence criteria is enabled, but `n_ratings` was not passed. Using the '
+                        'default of 4 confidence ratings / 3 confidence criteria. To suppress this warning, pass '
+                        '`n_ratings=X` to the `fit` method.')
+
+                # raise ValueError('Type 2 (confidence) criteria enabled, but n_ratings is None.')
+            self.cfg._prepare_confidence_criteria(n_ratings)
+            self.result._count_params(self.cfg)
+            self.data._discretize_confidence()
 
         # compute decision values
         self._compute_decision_values()
@@ -298,11 +322,11 @@ class ReMeta:
             if self.cfg.param_type1_noise.model == 'normal':
                 # normal: c = 2*ɸ(z) - 1 -> z = ɸ^-1(0.5*(c+1)) -> Jacobian = dz/dc = sqrt(π/2)*exp((erf^-1(c))**2)
                 self.modeldata.precomputed.jacobian_temperature = \
-                [np.sqrt(np.pi / 2.0) * np.exp(erfinv(np.minimum(1-1e-8, self.data.c_conf[s]))**2) for s in range(self.data.nsubjects)]
+                [np.sqrt(np.pi / 2.0) * np.exp(erfinv(np.minimum(1-1e-8, self.data.c_conf[s]))**2) for s in range(self.data.n_subjects)]
             elif self.cfg.param_type1_noise.model == 'logistic':
                 # logistic: c = tanh(z * (π/2√3)) -> z = (2√3/π) * atanh(c) -> Jacobian = dz/dc = (2√3/π) / (1 - c**2)
                 self.modeldata.precomputed.jacobian_temperature = \
-                    [((2 * np.sqrt(3)) / np.pi) / (1 - np.minimum(1-1e-8, self.data.c_conf[s])**2) for s in range(self.data.nsubjects)]
+                    [((2 * np.sqrt(3)) / np.pi) / (1 - np.minimum(1-1e-8, self.data.c_conf[s])**2) for s in range(self.data.n_subjects)]
             self.modeldata.precomputed.quintiles_temperature = np.arange(self.cfg.temperature_marg_res, 1, self.cfg.temperature_marg_res)
 
         if verbosity:
@@ -310,7 +334,7 @@ class ReMeta:
 
         with warnings.catch_warnings():  # noqa
             warnings.filterwarnings('ignore', module='scipy.optimize')
-            if self.cfg._paramset_type2.nparams > 0:
+            if self.cfg._paramset_type2.n_params > 0:
 
                 if verbosity:
                     print(f'{SP2}Subject-level estimation (MLE)')
@@ -318,11 +342,11 @@ class ReMeta:
                     # print(f'{SP2}Scipy solvers: {self.cfg.optim_type1_scipy_solvers}')
 
                 # Single-subject fits via MLE
-                # use_multiproc_for_subject_loop = (self.cfg._optim_num_cores >= 8) and (self.data.nsubjects >= 8)
-                use_multiproc_for_subject_loop = (self.cfg._optim_num_cores >= 4) and (self.data.nsubjects >= 4)
+                # use_multiproc_for_subject_loop = (self.cfg._optim_num_cores >= 8) and (self.data.n_subjects >= 8)
+                use_multiproc_for_subject_loop = (self.cfg._optim_num_cores >= 4) and (self.data.n_subjects >= 4)
                 def subject_loop(s):
-                    if (verbosity > 0) and (self.data.nsubjects > 1):
-                        print(f'{TAB} Subject {s + 1} / {self.data.nsubjects}')
+                    if (verbosity > 0) and (self.data.n_subjects > 1):
+                        print(f'{TAB} Subject {s + 1} / {self.data.n_subjects}')
                     return subject_estimation(
                         self.compute_type2_negll, self.cfg._paramset_type2, args=[s],
                         gridsearch=self.cfg.optim_type2_gridsearch,
@@ -336,34 +360,34 @@ class ReMeta:
                     )
                 if use_multiproc_for_subject_loop:
                     with DillPool(self.cfg._optim_num_cores) as pool:
-                        fits_type2_subject = pool.map(subject_loop, range(self.data.nsubjects))
+                        fits_type2_subject = pool.map(subject_loop, range(self.data.n_subjects))
                 else:
-                    fits_type2_subject = [None for _ in range(self.data.nsubjects)]
-                    for s in range(self.data.nsubjects):
+                    fits_type2_subject = [None for _ in range(self.data.n_subjects)]
+                    for s in range(self.data.n_subjects):
                         fits_type2_subject[s] = subject_loop(s)
 
                 # Store single-subject results
-                params_subject = [fits_type2_subject[s].x for s in range(self.data.nsubjects)]
-                params_hessian_subject = [fits_type2_subject[s].hessian for s in range(self.data.nsubjects)]
+                params_subject = [fits_type2_subject[s].x for s in range(self.data.n_subjects)]
+                params_hessian_subject = [fits_type2_subject[s].hessian for s in range(self.data.n_subjects)]
                 self.result.type2.subject.store(
                     'type2', self.cfg, self.data, self.compute_type2_negll, params_subject,
                     hessian=params_hessian_subject,
                     fit=fits_type2_subject,
-                    execution_time=np.sum([fits_type2_subject[s].execution_time for s in range(self.data.nsubjects)])
+                    execution_time=np.sum([fits_type2_subject[s].execution_time for s in range(self.data.n_subjects)])
                 )
 
                 if verbosity:
                     print(f'{TAB}.. finished ({timeit.default_timer() - tind:.1f} secs).')
 
                 # Group fit
-                if self.data.nsubjects > 1:
-                    idx_fe = np.array([i for i, p in enumerate(self.cfg._paramset_type2.parameters_flat.values()) if p.group == 'fixed'])
-                    idx_re = np.array([i for i, p in enumerate(self.cfg._paramset_type2.parameters_flat.values()) if p.group == 'random'])
+                if self.data.n_subjects > 1:
+                    idx_fe = np.array([i for i, p in enumerate(self.cfg._paramset_type2._parameters_flat.values()) if p.group == 'fixed'])
+                    idx_re = np.array([i for i, p in enumerate(self.cfg._paramset_type2._parameters_flat.values()) if p.group == 'random'])
                     if (len(idx_fe) > 0) or (len(idx_re) > 0):
 
                         fit_type2_group = group_estimation(
                             fun=self.compute_type2_negll,
-                            nsubjects=self.data.nsubjects,
+                            n_subjects=self.data.n_subjects,
                             params_init=params_subject,
                             bounds=self.cfg._paramset_type2.bounds,
                             idx_fe=idx_fe,
@@ -378,9 +402,9 @@ class ReMeta:
                         self.result.type2.init_group()
                         self.result.type2.group.store(
                             'type2', self.cfg, self.data, self.compute_type2_negll,
-                            params=[fit_type2_group.x[s] for s in range(self.data.nsubjects)],
-                            params_se=[fit_type2_group.x_se[s] for s in range(self.data.nsubjects)],
-                            params_cov=None if fit_type2_group.x_cov is None else [fit_type2_group.x_cov[s] for s in range(self.data.nsubjects)],
+                            params=[fit_type2_group.x[s] for s in range(self.data.n_subjects)],
+                            params_se=[fit_type2_group.x_se[s] for s in range(self.data.n_subjects)],
+                            params_cov=None if fit_type2_group.x_cov is None else [fit_type2_group.x_cov[s] for s in range(self.data.n_subjects)],
                             pop_mean_sd=fit_type2_group.x_re_pop_mean_sd,
                             execution_time=fit_type2_group.execution_time
                         )
@@ -399,7 +423,7 @@ class ReMeta:
 
         return self
 
-    def summary(self, generative=False, generative_nsamples=1000, squeeze=True):
+    def summary(self, generative=False, generative_n_samples=1000, squeeze=True):
         """
         Provides information about the model fit.
 
@@ -408,7 +432,7 @@ class ReMeta:
         generative : bool
             If True, compare model predictions of confidence with empirical confidence by repeatedly sampling from
             the generative model.
-        generative_nsamples : int
+        generative_n_samples : int
             Number of samples used for the generative model (higher = more accurate).
         squeeze : bool (default: True)
             If True, return flattened results in case of only a single participant.
@@ -420,9 +444,9 @@ class ReMeta:
         """
 
         if self.type2_is_fitted and generative:
-            c_conf_generative = [np.empty((generative_nsamples, self.data.nsamples[s])) for s in range(self.data.nsubjects)]
-            for s in range(self.data.nsubjects):
-                c_conf_generative[s] = simulate(self.result.params[s], nsubjects=generative_nsamples, nsamples=self.data.nsamples[s],
+            c_conf_generative = [np.empty((generative_n_samples, self.data.n_samples[s])) for s in range(self.data.n_subjects)]
+            for s in range(self.data.n_subjects):
+                c_conf_generative[s] = simulate(self.result.params[s], n_subjects=generative_n_samples, n_samples=self.data.n_samples[s],
                                                 cfg=self.cfg, custom_stimuli=self.data.x_stim[s], verbosity=0).confidence
         else:
             c_conf_generative = None
@@ -438,7 +462,7 @@ class ReMeta:
 
         Parameters:
         -----------
-        params : array-like of shape (nparams)
+        params : array-like of shape (n_params)
             Parameter array of the type 1 level.
         sub_ind : int
             Subject index (only valid for 2d multi-subject datasets)
@@ -454,7 +478,7 @@ class ReMeta:
         # bl = self.cfg._paramset_type1.param_len_list
         # params_type1 = {p: params[int(np.sum(bl[:i]))] if n == 1 else [params[int(np.sum(bl[:i])) + j] for j in range(n)]
         #                 for i, (p, n) in enumerate(zip(self.cfg._paramset_type1.param_names, bl))}
-        params_type1 = {p: params[ind] for p, ind in self.cfg._paramset_type1.param_ind.items()}
+        params_type1 = {p: params[ind] for p, ind in self.cfg._paramset_type1._param_ind.items()}
 
         type1_thresh = _check_param(params_type1['type1_thresh'] if self.cfg.param_type1_thresh.enable else self.cfg.param_type1_thresh.default)
         type1_bias = _check_param(params_type1['type1_bias'] if self.cfg.param_type1_bias.enable else self.cfg.param_type1_bias.default)
@@ -472,7 +496,7 @@ class ReMeta:
         y_decval[cond_neg] = (np.abs(x_stim_transform[cond_neg]) > type1_thresh[0]) * x_stim_transform[cond_neg] + type1_bias[0]
         y_decval[cond_pos] = (np.abs(x_stim_transform[cond_pos]) > type1_thresh[1]) * x_stim_transform[cond_pos] + type1_bias[1]
 
-        if self.cfg.param_type1_noise_heteroscedastic.enable or (self.cfg.param_type1_noise.enable == 2):
+        if self.cfg.param_type1_noise_heteroscedastic.enable or self.cfg.param_type1_noise.asym:
             type1_noise = compute_signal_dependent_type1_noise(
                 x_stim=x_stim_transform,
                 type1_noise_signal_dependency=self.cfg.param_type1_noise_heteroscedastic.model if self.cfg.param_type1_noise_heteroscedastic.enable else None,
@@ -490,7 +514,7 @@ class ReMeta:
 
         # Add negative log likelihood of (fixed) Normal priors
         priors = [((params_type1[k] - p.prior[0])**2) / (2 * p.prior[1]**2) for k, p in
-                  self.cfg._paramset_type1.parameters_flat.items() if isinstance(p.prior, tuple)]
+                  self.cfg._paramset_type1._parameters_flat.items() if isinstance(p.prior, tuple)]
         if len(priors) > 0:
             negll += np.sum(priors)
 
@@ -498,8 +522,8 @@ class ReMeta:
             getattr(self.result.type1, save_type).params[sub_ind] = params_type1
             getattr(self.result.type1, save_type).loglik[sub_ind] = -negll
             if self.modeldata.type1_posterior is None:
-                self.modeldata.type1_posterior = empty_list(self.data.nsubjects, self.data.nsamples)
-                self.modeldata.type1_likelihood = empty_list(self.data.nsubjects, self.data.nsamples)
+                self.modeldata.type1_posterior = empty_list(self.data.n_subjects, self.data.n_samples)
+                self.modeldata.type1_likelihood = empty_list(self.data.n_subjects, self.data.n_samples)
             self.modeldata.type1_posterior[sub_ind] = posterior
             self.modeldata.type1_likelihood[sub_ind] = likelihood
         return negll
@@ -510,7 +534,7 @@ class ReMeta:
 
         Parameters:
         -----------
-        params : array-like of shape (nparams)
+        params : array-like of shape (n_params)
             Parameter array of the type 2 level.
         sub_ind : int
             Subject index (only valid for 2d multi-subject datasets)
@@ -530,18 +554,12 @@ class ReMeta:
 
         type2_noise_type = self.cfg.type2_noise_type if type2_noise_type is None else type2_noise_type
 
-        # bl = self.cfg._paramset_type2.param_len_list
-        # params_type2 = {p: params[int(np.sum(bl[:i]))] if n == 1 else [params[int(np.sum(bl[:i])) + j] for j in range(n)]
-        #                 for i, (p, n) in enumerate(zip(self.cfg._paramset_type2.param_names, bl))}
-        params_type2 = {p: params[ind] for p, ind in self.cfg._paramset_type2.param_ind.items()}
+        params_type2 = {p: params[ind] for p, ind in self.cfg._paramset_type2._param_ind.items()}
 
         if self.cfg.param_type2_criteria.enable or self.cfg.param_type2_criteria.preset is not None:
             likelihood_grid = self._compute_type2_likelihood_criteria(params_type2, sub_ind, type2_noise_type=type2_noise_type)
         else:
             likelihood_grid = self._compute_type2_likelihood_continuous(params_type2, sub_ind, type2_noise_type=type2_noise_type)
-
-        # if save_type is not None and ('type2_criteria' in params_type2) and (np.any(params_type2['type2_criteria']) > 1.001):
-        #     params_type2['type2_criteria'] = check_criteria(params_type2['type2_criteria'])
 
         if type2_noise_type == 'temperature':
             likelihood = likelihood_grid  # in case of the noisy-temp model there is no grid
@@ -569,23 +587,23 @@ class ReMeta:
 
         # Add negative log likelihood of (fixed) Normal priors
         priors = [((params_type2[k] - p.prior[0])**2) / (2 * p.prior[1]**2) for k, p in
-                  self.cfg._paramset_type2.parameters_flat.items() if isinstance(p.prior, tuple)]
+                  self.cfg._paramset_type2._parameters_flat.items() if isinstance(p.prior, tuple)]
         if len(priors) > 0:
             negll += np.sum(priors)
 
         if save_type is not None and (save_type != 'mock'):
             if type2_noise_type != 'temperature':
                 if self.modeldata.c_conf_grid is None:
-                    self.modeldata.c_conf_grid = empty_list(self.data.nsubjects, self.data.nsamples, self.cfg.type1_marg_steps)
+                    self.modeldata.c_conf_grid = empty_list(self.data.n_subjects, self.data.n_samples, self.cfg.type1_marg_steps)
                 self.modeldata.c_conf_grid[sub_ind] = self._type1_evidence_to_confidence(self.modeldata.z1_type1_evidence_grid[sub_ind], params_type2, sub_ind)
                 if not self.cfg.type1_likel_incongr:
                     self.modeldata.c_conf_grid[sub_ind][self.modeldata.y_decval_grid_invalid[sub_ind]] = np.nan
             if self.modeldata.c_conf is None:
-                self.modeldata.c_conf = empty_list(self.data.nsubjects, self.data.nsamples)
+                self.modeldata.c_conf = empty_list(self.data.n_subjects, self.data.n_samples)
             self.modeldata.c_conf[sub_ind] = self._type1_evidence_to_confidence(self.modeldata.z1_type1_evidence[sub_ind], params_type2, sub_ind)
             if self.modeldata.type2_likelihood is None:
-                self.modeldata.type2_likelihood = empty_list(self.data.nsubjects, self.data.nsamples)
-                self.modeldata.type2_likelihood_grid = empty_list(self.data.nsubjects, self.data.nsamples, self.cfg.type1_marg_steps)
+                self.modeldata.type2_likelihood = empty_list(self.data.n_subjects, self.data.n_samples)
+                self.modeldata.type2_likelihood_grid = empty_list(self.data.n_subjects, self.data.n_samples, self.cfg.type1_marg_steps)
             self.modeldata.type2_likelihood[sub_ind] = likelihood
             self.modeldata.type2_likelihood_grid[sub_ind] = likelihood_grid
 
@@ -822,15 +840,15 @@ class ReMeta:
 
         range_ = np.linspace(0, self.cfg.type1_marg_z, int((self.cfg.type1_marg_steps + 1) / 2))[1:]
         yrange = np.hstack((-range_[::-1], 0, range_))
-        self.modeldata.y_decval_grid = [np.empty((self.data.nsamples[s], yrange.shape[0])) for s in range(self.data.nsubjects)]
-        self.modeldata.y_decval = [np.empty(self.data.nsamples[s]) for s in range(self.data.nsubjects)]
+        self.modeldata.y_decval_grid = [np.empty((self.data.n_samples[s], yrange.shape[0])) for s in range(self.data.n_subjects)]
+        self.modeldata.y_decval = [np.empty(self.data.n_samples[s]) for s in range(self.data.n_subjects)]
         if self.cfg.type2_noise_type != 'temperature':
-            self.modeldata.y_decval_pmf_grid = [np.empty(self.modeldata.y_decval_grid[s].shape) for s in range(self.data.nsubjects)]
+            self.modeldata.y_decval_pmf_grid = [np.empty(self.modeldata.y_decval_grid[s].shape) for s in range(self.data.n_subjects)]
             if not self.cfg.type1_likel_incongr:
-                self.modeldata.y_decval_grid_invalid = [np.empty(self.modeldata.y_decval_grid[s].shape, dtype=bool) for s in range(self.data.nsubjects)]
+                self.modeldata.y_decval_grid_invalid = [np.empty(self.modeldata.y_decval_grid[s].shape, dtype=bool) for s in range(self.data.n_subjects)]
         if self.cfg.min_type2_like_uni:
-            self.modeldata.precomputed.uniform_type2_negll = np.empty(self.data.nsubjects)
-        for s in range(self.data.nsubjects):
+            self.modeldata.precomputed.uniform_type2_negll = np.empty(self.data.n_subjects)
+        for s in range(self.data.n_subjects):
 
             type1_noise_trialwise = compute_signal_dependent_type1_noise(
                 x_stim=self.data.x_stim_3d[s],
@@ -898,9 +916,9 @@ class ReMeta:
                     self.modeldata.precomputed.uniform_type2_negll[s] = -np.log(min_type2_likelihood).sum()
 
         if self.cfg.type2_noise_type != 'temperature':
-            self.modeldata.z1_type1_evidence_grid = [np.abs(self.modeldata.y_decval_grid[s]) for s in range(self.data.nsubjects)]
+            self.modeldata.z1_type1_evidence_grid = [np.abs(self.modeldata.y_decval_grid[s]) for s in range(self.data.n_subjects)]
 
-        self.modeldata.z1_type1_evidence = [np.abs(self.modeldata.y_decval[s]) for s in range(self.data.nsubjects)]
+        self.modeldata.z1_type1_evidence = [np.abs(self.modeldata.y_decval[s]) for s in range(self.data.n_subjects)]
 
 
     def _check_fit(self):
