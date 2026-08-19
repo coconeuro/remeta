@@ -276,47 +276,83 @@ def compute_cov_criteria(cov_full, idx_crit):
     return cov_crit
 
 
-def _solve_criterion_covariance(cov, rhs):
-    try:
+# def _solve_criterion_covariance(cov, rhs):
+#     try:
+#         c, lower = cho_factor(cov, lower=True, check_finite=False)
+#         return cho_solve((c, lower), rhs, check_finite=False)
+#     except np.linalg.LinAlgError:
+#         eigval, eigvec = np.linalg.eigh(cov)
+#         tol = np.finfo(float).eps * max(cov.shape) * max(np.max(np.abs(eigval)), 1.0)
+#         keep = eigval > tol
+#
+#         if np.any(eigval < -tol):
+#             warnings.warn(
+#                 'Criterion covariance is not positive semidefinite; negative eigenvalues are clipped '
+#                 'for the criterion-bias uncertainty calculation.',
+#                 RuntimeWarning,
+#                 stacklevel=2
+#             )
+#         if not np.any(keep):
+#             raise np.linalg.LinAlgError('Criterion covariance has no positive eigenvalues')
+#
+#         return eigvec[:, keep] @ ((eigvec[:, keep].T @ rhs) / eigval[keep])
+
+def _solve_criterion_covariance(cov, rhs, rcond=1e-8, silence_warnings=False):
+    eigval = np.linalg.eigvalsh(cov)
+
+    max_eig = np.max(np.abs(eigval))
+    tol = rcond * max_eig
+
+    if np.min(eigval) > tol:
         c, lower = cho_factor(cov, lower=True, check_finite=False)
         return cho_solve((c, lower), rhs, check_finite=False)
-    except np.linalg.LinAlgError:
-        eigval, eigvec = np.linalg.eigh(cov)
-        tol = np.finfo(float).eps * max(cov.shape) * max(np.max(np.abs(eigval)), 1.0)
-        keep = eigval > tol
 
-        if np.any(eigval < -tol):
-            warnings.warn(
-                'Criterion covariance is not positive semidefinite; negative eigenvalues are clipped '
-                'for the criterion-bias uncertainty calculation.',
-                RuntimeWarning,
-                stacklevel=2
-            )
-        if not np.any(keep):
-            raise np.linalg.LinAlgError('Criterion covariance has no positive eigenvalues')
+    # Near-singular or indefinite: use truncated eigendecomposition
+    eigval, eigvec = np.linalg.eigh(cov)
+    keep = eigval > tol
 
-        return eigvec[:, keep] @ ((eigvec[:, keep].T @ rhs) / eigval[keep])
+    if np.any(eigval < -tol) and not silence_warnings:
+        warnings.warn(
+            "Criterion covariance is not positive semidefinite; "
+            "negative eigenvalues are clipped for the "
+            "criterion-bias uncertainty calculation.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    if not np.any(keep):
+        raise np.linalg.LinAlgError(
+            "Criterion covariance has no sufficiently positive eigenvalues"
+        )
+
+    return eigvec[:, keep] @ (
+        (eigvec[:, keep].T @ rhs) / eigval[keep]
+    )
 
 
-def compute_criterion_bias(criteria, cov_crit):
-    """Idea: compute criterion bias as a weighted sum of differences from Bayes-optiomal criteria.
+def compute_criterion_bias(criteria, cov_crit, silence_warnings=False):
+    """Idea: compute criterion bias as a weighted mean of differences from Bayes-optiomal criteria.
        The weights are the uncertainty estimates (SEs) of the criteria; we slightly improve on this
        by also considering the correlation structure between criterion uncertainties, i.e. the full covariance
        matrix.
     """
 
-    cov_crit = 0.5 * (cov_crit + cov_crit.T)
-
     k = len(criteria) + 1
     crit_bayes = np.arange(1/k, 1-1e-10, 1/k)
     diff = criteria - crit_bayes
-    one = np.ones_like(criteria)
 
-    # numer = (multivariate) weighted sum of criterion differences
+    if cov_crit is None:
+        if not silence_warnings:
+            warnings.warn('\t[!!] Criterion covariance matrix not available, computing criterion bias as an unweighted sum.')
+        return np.mean(diff), None
+
     try:
-        numer = one @ _solve_criterion_covariance(cov_crit, diff)
+        cov_crit = 0.5 * (cov_crit + cov_crit.T)
+        one = np.ones_like(criteria)
+        # numer = (multivariate) weighted sum of criterion differences
+        numer = one @ _solve_criterion_covariance(cov_crit, diff, silence_warnings)
         # denom = (multivariate) sum of all weights
-        denom = one @ _solve_criterion_covariance(cov_crit, one)
+        denom = one @ _solve_criterion_covariance(cov_crit, one, silence_warnings)
         if (not np.isfinite(denom)) or (denom <= 0):
             raise np.linalg.LinAlgError('Criterion covariance does not define a positive criterion-bias precision')
 
@@ -326,12 +362,9 @@ def compute_criterion_bias(criteria, cov_crit):
         return bias_crit, bias_crit_se
 
     except np.linalg.LinAlgError:
-        warnings.warn(
-            'Cannot compute criterion bias due to a deficient criterion covariance matrix.',
-            RuntimeWarning,
-            stacklevel=2
-        )
-        return None, None
+        if not silence_warnings:
+            warnings.warn('\t[!!] Deficient criterion covariance matrix, computing criterion bias as an unweighted sum.')
+        return np.mean(diff), None
 
 
 def compute_choice_bias(stimuli, choices, smooth=0.5):
