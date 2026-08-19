@@ -307,7 +307,7 @@ class Data(ReprMixin):
             self.accuracy[s] = (self.x_stim_category[s] == self.d_dec[s]).astype(int)
             self.stats_accuracy[s] = np.mean(self.accuracy[s])
             self.stats_dprime[s] = norm.ppf(min(1 - 1e-3, max(1e-3, self.d_dec[s][self.x_stim_category[s] == 1].mean()))) - \
-                                   norm.ppf(min(1 - 1e-3, max(1e-3, self.d_dec[s][self.x_stim_category[s] == 0].mean().mean())))
+                                   norm.ppf(min(1 - 1e-3, max(1e-3, self.d_dec[s][self.x_stim_category[s] == 0].mean())))
             self.stats_choice_bias[s] = self.d_dec[s].mean() - self.x_stim_category[s].mean()
             # self.stats_choice_bias[s] = compute_choice_bias(self.x_stim[s], self.d_dec[s])
             # self.stats_choice_bias[s] = compute_choice_bias_horizontal(self.x_stim[s], self.d_dec[s])
@@ -347,7 +347,7 @@ class ModelResult():
         self.level = level
 
     def store(self, stage, cfg, data, fun, params, params_se=None, params_cov=None, hessian=None,
-              pop_mean_sd=None, execution_time=None, fit=None):
+              pop_mean_sd=None, execution_time=None, fit=None, silence_warnings=False):
         self.n_params = cfg._paramset_type1.n_params
         self.n_subjects = data.n_subjects
         self.n_samples = data.n_samples
@@ -382,10 +382,11 @@ class ModelResult():
                 if params_cov is not None:
                     cov = params_cov[s]
 
-            if (stage == 'type2') and ('type2_criteria' in self.params[s]) and cov is not None:
-                cov_crit = compute_cov_criteria(cov, cfg._paramset_type2._param_ind['type2_criteria'])
-                se_params[cfg._paramset_type2._param_ind['type2_criteria']] = se_from_cov(cov_crit)
-                self.params_extra[s] = self._compute_parameters_extra(self.params[s], cov_crit)
+            if (stage == 'type2') and ('type2_criteria' in self.params[s]):
+                cov_crit = None if cov is None else compute_cov_criteria(cov, cfg._paramset_type2._param_ind['type2_criteria'])
+                if cov_crit is not None:
+                    se_params[cfg._paramset_type2._param_ind['type2_criteria']] = se_from_cov(cov_crit)
+                self.params_extra[s] = self._compute_parameters_extra(self.params[s], cov_crit, silence_warnings=silence_warnings)
 
             if se_params is not None:
                 self.params_se[s] = {p: se_params[ind] for p, ind in getattr(cfg, f'_paramset_{stage}')._param_ind.items()}
@@ -408,9 +409,9 @@ class ModelResult():
         if fit is not None:
             self.fit = fit
 
-    def _compute_parameters_extra(self, params, cov_crit):
+    def _compute_parameters_extra(self, params, cov_crit, silence_warnings=False):
 
-        bias_crit, bias_crit_se = compute_criterion_bias(params['type2_criteria'], cov_crit)
+        bias_crit, bias_crit_se = compute_criterion_bias(params['type2_criteria'], cov_crit, silence_warnings=silence_warnings)
 
         params_extra = dict()
         params_extra['type2_criteria_bias'] = bias_crit
