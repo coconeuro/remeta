@@ -13,13 +13,13 @@ DESCRIPTION = (
 DISTNAME = 'remeta'
 MAINTAINER = 'Matthias Guggenmos'
 MAINTAINER_EMAIL = 'mg.corresponding@gmail.com'
-VERSION = '0.99.6'
+VERSION = '0.99.8'
 LICENCE = 'MIT License'
 
 INSTALL_REQUIRES = [
     'numpy>=1.20',
     'scipy>=1.3',
-    'multiprocessing_on_dill>=3.5.0a4',
+    'joblib>=1.2',
     'matplotlib>=3.6.0',
     'numdifftools>=0.9.38']
 
