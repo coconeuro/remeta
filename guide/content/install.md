@@ -17,6 +17,6 @@ pip install git+https://github.com/m-guggenmos/remeta.git
 Required packages (should be automatically installed with pip):
 - numpy (>=1.20)
 - scipy (>=1.3)
-- multiprocessing_on_dill (>=3.5.0a4) (only necessary for when the toolbox should be used with multiple cores)
+- joblib (>=1.2) (only necessary for when the toolbox should be used with multiple cores)
 - matplotlib (>=3.6.0)
 - numdifftools (>=0.9.38)
