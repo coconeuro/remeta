@@ -5,9 +5,9 @@ import timeit
 import warnings
 
 try:  # only necessary if multiple cores should be used
-    from multiprocessing_on_dill.pool import Pool as DillPool
+    from joblib import Parallel, delayed
 except ModuleNotFoundError:
-    pass
+    Parallel = None
 
 import numpy as np
 from scipy.special import expit, ndtr, erfinv
@@ -197,22 +197,20 @@ class ReMeta:
 
         if verbosity:
             print('\n+++ Type 1 level +++')
-        with warnings.catch_warnings():
-            warnings.filterwarnings('ignore', category=UserWarning, module='scipy.optimize',
-                                    message='delta_grad == 0.0. Check if the approximated function is linear. If the '
-                                            'function is linear better results can be obtained by defining the Hessian '
-                                            'as zero instead of using quasi-Newton approximations.')
 
-            fits_type1_subject, fit_type1_group = None, None
-            if self.cfg._paramset_type1.n_params > 0:
+        fits_type1_subject, fit_type1_group = None, None
+        if self.cfg._paramset_type1.n_params > 0:
 
-                if verbosity:
-                    print(f'{SP2}Subject-level estimation (MLE)')
-                    tind = timeit.default_timer()
+            if verbosity:
+                print(f'{SP2}Subject-level estimation (MLE)')
+                tind = timeit.default_timer()
 
-                # Single-subject fits via MLE
-                use_multiproc_for_subject_loop = (self.cfg._optim_num_cores >= 8) and (self.data.n_subjects >= 8)
-                def subject_loop(s):
+            # Single-subject fits via MLE
+            use_multiproc_for_subject_loop = (self.cfg._optim_num_cores >= 8) and (self.data.n_subjects >= 8)
+            def subject_loop(s):
+                with warnings.catch_warnings():
+                    # warnings.filterwarnings('ignore', category=UserWarning, module=r'scipy\.optimize.*', message=r'delta_grad == 0\.0\.')
+                    warnings.filterwarnings('ignore', category=UserWarning, module=r'scipy\.optimize.*')
                     if (verbosity > 0) and (self.data.n_subjects > 1):
                         print(f'{TAB} Subject {s + 1} / {self.data.n_subjects}')
                     return subject_estimation(
@@ -226,53 +224,59 @@ class ReMeta:
                         force_hessian_uncertainty=self.cfg.optim_force_hessian_uncertainty,
                         verbosity=verbosity, silence_warnings=silence_warnings
                     )
-                if use_multiproc_for_subject_loop:
-                    with DillPool(self.cfg._optim_num_cores) as pool:
-                        fits_type1_subject = pool.map(subject_loop, range(self.data.n_subjects))
-                else:
-                    fits_type1_subject = [None for _ in range(self.data.n_subjects)]
-                    for s in range(self.data.n_subjects):
-                        fits_type1_subject[s] = subject_loop(s)
-                # Store single-subject results
-                params_subject = [fits_type1_subject[s].x for s in range(self.data.n_subjects)]
-                params_hessian_subject = [fits_type1_subject[s].hessian for s in range(self.data.n_subjects)]
-                self.result.type1.subject.store(
-                    'type1', self.cfg, self.data, self.compute_type1_negll, params_subject,
-                    hessian=params_hessian_subject, fit=fits_type1_subject,
-                    execution_time=np.sum([fits_type1_subject[s].execution_time for s in range(self.data.n_subjects)])
+            if not use_multiproc_for_subject_loop or Parallel is None:
+                if use_multiproc_for_subject_loop and not silence_warnings:
+                    warnings.warn('Multiprocessing is enabled, but joblib is not installed.')
+                fits_type1_subject = [None for _ in range(self.data.n_subjects)]
+                for s in range(self.data.n_subjects):
+                    fits_type1_subject[s] = subject_loop(s)
+            else:
+                fits_type1_subject = Parallel(n_jobs=self.cfg._optim_num_cores)(
+                    delayed(subject_loop)(s) for s in range(self.data.n_subjects)
                 )
 
-                if verbosity:
-                    print(f'{TAB}.. finished ({timeit.default_timer() - tind:.1f} secs).')
+            # Store single-subject results
+            params_subject = [fits_type1_subject[s].x for s in range(self.data.n_subjects)]
+            params_hessian_subject = [fits_type1_subject[s].hessian for s in range(self.data.n_subjects)]
+            self.result.type1.subject.store(
+                'type1', self.cfg, self.data, self.compute_type1_negll, params_subject,
+                hessian=params_hessian_subject, fit=fits_type1_subject,
+                execution_time=np.sum([fits_type1_subject[s].execution_time for s in range(self.data.n_subjects)]),
+                silence_warnings=silence_warnings
+            )
 
-                if self.data.n_subjects > 1:
-                    idx_fe = np.array([i for i, p in enumerate(self.cfg._paramset_type1._parameters_flat.values()) if p.group == 'fixed'])
-                    idx_re = np.array([i for i, p in enumerate(self.cfg._paramset_type1._parameters_flat.values()) if p.group == 'random'])
-                    if (len(idx_fe) > 0) or (len(idx_re) > 0):
+            if verbosity:
+                print(f'{TAB}.. finished ({timeit.default_timer() - tind:.1f} secs).')
 
-                        fit_type1_group = group_estimation(
-                            fun=self.compute_type1_negll,
-                            n_subjects=self.data.n_subjects,
-                            params_init=params_subject,
-                            bounds=self.cfg._paramset_type1.bounds,
-                            idx_fe=idx_fe,
-                            idx_re=idx_re,
-                            num_cores=self.cfg._optim_num_cores,
-                            max_iter=30, sigma_floor=1e-3,
-                            random_effect_method=self.cfg.optim_type1_random_effect_method,
-                            include_posterior_variance=self.cfg.optim_type1_include_posterior_variance,
-                            verbosity=verbosity
-                        )
+            if self.data.n_subjects > 1:
+                idx_fe = np.array([i for i, p in enumerate(self.cfg._paramset_type1._parameters_flat.values()) if p.group == 'fixed'])
+                idx_re = np.array([i for i, p in enumerate(self.cfg._paramset_type1._parameters_flat.values()) if p.group == 'random'])
+                if (len(idx_fe) > 0) or (len(idx_re) > 0):
 
-                        self.result.type1.init_group()
-                        self.result.type1.group.store(
-                            'type1', self.cfg, self.data, self.compute_type1_negll,
-                            params=[fit_type1_group.x[s] for s in range(self.data.n_subjects)],
-                            params_se=[fit_type1_group.x_se[s] for s in range(self.data.n_subjects)],
-                            params_cov=[fit_type1_group.x_cov[s] for s in range(self.data.n_subjects)],
-                            pop_mean_sd=fit_type1_group.x_re_pop_mean_sd,
-                            execution_time=fit_type1_group.execution_time
-                        )
+                    fit_type1_group = group_estimation(
+                        fun=self.compute_type1_negll,
+                        n_subjects=self.data.n_subjects,
+                        params_init=params_subject,
+                        bounds=self.cfg._paramset_type1.bounds,
+                        idx_fe=idx_fe,
+                        idx_re=idx_re,
+                        num_cores=self.cfg._optim_num_cores,
+                        max_iter=30, sigma_floor=1e-3,
+                        random_effect_method=self.cfg.optim_type1_random_effect_method,
+                        include_posterior_variance=self.cfg.optim_type1_include_posterior_variance,
+                        verbosity=verbosity
+                    )
+
+                    self.result.type1.init_group()
+                    self.result.type1.group.store(
+                        'type1', self.cfg, self.data, self.compute_type1_negll,
+                        params=[fit_type1_group.x[s] for s in range(self.data.n_subjects)],
+                        params_se=[fit_type1_group.x_se[s] for s in range(self.data.n_subjects)],
+                        params_cov=[fit_type1_group.x_cov[s] for s in range(self.data.n_subjects)],
+                        pop_mean_sd=fit_type1_group.x_re_pop_mean_sd,
+                        execution_time=fit_type1_group.execution_time,
+                        silence_warnings=silence_warnings
+                    )
 
             self.result.type1.store(cfg=self.cfg, data=self.data, fun=self.compute_type1_negll)
             if verbosity:
@@ -295,7 +299,7 @@ class ReMeta:
         if self.cfg.param_type2_criteria.enable:
             if n_ratings is None:
                 n_ratings = 4
-                n_unique_ratings = len(np.unique(self.data.c_conf))
+                n_unique_ratings = len(np.unique(np.hstack(self.data.c_conf)))
                 if n_unique_ratings > 10:
                     # assume continuous confidence ratings
                     print('Fitting of confidence criteria is enabled, but `n_ratings` was not passed. Using the '
@@ -332,19 +336,19 @@ class ReMeta:
         if verbosity:
             print('\n+++ Type 2 level +++')
 
-        with warnings.catch_warnings():  # noqa
-            warnings.filterwarnings('ignore', module='scipy.optimize')
-            if self.cfg._paramset_type2.n_params > 0:
+        if self.cfg._paramset_type2.n_params > 0:
 
-                if verbosity:
-                    print(f'{SP2}Subject-level estimation (MLE)')
-                    tind = timeit.default_timer()
-                    # print(f'{SP2}Scipy solvers: {self.cfg.optim_type1_scipy_solvers}')
+            if verbosity:
+                print(f'{SP2}Subject-level estimation (MLE)')
+                tind = timeit.default_timer()
+                # print(f'{SP2}Scipy solvers: {self.cfg.optim_type1_scipy_solvers}')
 
-                # Single-subject fits via MLE
-                # use_multiproc_for_subject_loop = (self.cfg._optim_num_cores >= 8) and (self.data.n_subjects >= 8)
-                use_multiproc_for_subject_loop = (self.cfg._optim_num_cores >= 4) and (self.data.n_subjects >= 4)
-                def subject_loop(s):
+            # Single-subject fits via MLE
+            # use_multiproc_for_subject_loop = (self.cfg._optim_num_cores >= 8) and (self.data.n_subjects >= 8)
+            use_multiproc_for_subject_loop = (self.cfg._optim_num_cores >= 4) and (self.data.n_subjects >= 4)
+            def subject_loop(s):
+                with warnings.catch_warnings():  # noqa
+                    warnings.filterwarnings('ignore', category=UserWarning, module=r'scipy\.optimize.*')
                     if (verbosity > 0) and (self.data.n_subjects > 1):
                         print(f'{TAB} Subject {s + 1} / {self.data.n_subjects}')
                     return subject_estimation(
@@ -358,56 +362,62 @@ class ReMeta:
                         force_hessian_uncertainty=self.cfg.optim_force_hessian_uncertainty,
                         verbosity=verbosity, silence_warnings=silence_warnings
                     )
-                if use_multiproc_for_subject_loop:
-                    with DillPool(self.cfg._optim_num_cores) as pool:
-                        fits_type2_subject = pool.map(subject_loop, range(self.data.n_subjects))
-                else:
-                    fits_type2_subject = [None for _ in range(self.data.n_subjects)]
-                    for s in range(self.data.n_subjects):
-                        fits_type2_subject[s] = subject_loop(s)
 
-                # Store single-subject results
-                params_subject = [fits_type2_subject[s].x for s in range(self.data.n_subjects)]
-                params_hessian_subject = [fits_type2_subject[s].hessian for s in range(self.data.n_subjects)]
-                self.result.type2.subject.store(
-                    'type2', self.cfg, self.data, self.compute_type2_negll, params_subject,
-                    hessian=params_hessian_subject,
-                    fit=fits_type2_subject,
-                    execution_time=np.sum([fits_type2_subject[s].execution_time for s in range(self.data.n_subjects)])
+            if not use_multiproc_for_subject_loop or Parallel is None:
+                if use_multiproc_for_subject_loop and not silence_warnings:
+                    warnings.warn('Multiprocessing is enabled, but joblib is not installed.')
+                fits_type2_subject = [None for _ in range(self.data.n_subjects)]
+                for s in range(self.data.n_subjects):
+                    fits_type2_subject[s] = subject_loop(s)
+            else:
+                fits_type2_subject = Parallel(n_jobs=self.cfg._optim_num_cores)(
+                    delayed(subject_loop)(s) for s in range(self.data.n_subjects)
                 )
 
-                if verbosity:
-                    print(f'{TAB}.. finished ({timeit.default_timer() - tind:.1f} secs).')
+            # Store single-subject results
+            params_subject = [fits_type2_subject[s].x for s in range(self.data.n_subjects)]
+            params_hessian_subject = [fits_type2_subject[s].hessian for s in range(self.data.n_subjects)]
+            self.result.type2.subject.store(
+                'type2', self.cfg, self.data, self.compute_type2_negll, params_subject,
+                hessian=params_hessian_subject,
+                fit=fits_type2_subject,
+                execution_time=np.sum([fits_type2_subject[s].execution_time for s in range(self.data.n_subjects)]),
+                silence_warnings=silence_warnings
+            )
 
-                # Group fit
-                if self.data.n_subjects > 1:
-                    idx_fe = np.array([i for i, p in enumerate(self.cfg._paramset_type2._parameters_flat.values()) if p.group == 'fixed'])
-                    idx_re = np.array([i for i, p in enumerate(self.cfg._paramset_type2._parameters_flat.values()) if p.group == 'random'])
-                    if (len(idx_fe) > 0) or (len(idx_re) > 0):
+            if verbosity:
+                print(f'{TAB}.. finished ({timeit.default_timer() - tind:.1f} secs).')
 
-                        fit_type2_group = group_estimation(
-                            fun=self.compute_type2_negll,
-                            n_subjects=self.data.n_subjects,
-                            params_init=params_subject,
-                            bounds=self.cfg._paramset_type2.bounds,
-                            idx_fe=idx_fe,
-                            idx_re=idx_re,
-                            num_cores=self.cfg._optim_num_cores,
-                            max_iter=30, sigma_floor=1e-3,
-                            random_effect_method=self.cfg.optim_type2_random_effect_method,
-                            include_posterior_variance=self.cfg.optim_type2_include_posterior_variance,
-                            verbosity=verbosity
-                        )
+            # Group fit
+            if self.data.n_subjects > 1:
+                idx_fe = np.array([i for i, p in enumerate(self.cfg._paramset_type2._parameters_flat.values()) if p.group == 'fixed'])
+                idx_re = np.array([i for i, p in enumerate(self.cfg._paramset_type2._parameters_flat.values()) if p.group == 'random'])
+                if (len(idx_fe) > 0) or (len(idx_re) > 0):
 
-                        self.result.type2.init_group()
-                        self.result.type2.group.store(
-                            'type2', self.cfg, self.data, self.compute_type2_negll,
-                            params=[fit_type2_group.x[s] for s in range(self.data.n_subjects)],
-                            params_se=[fit_type2_group.x_se[s] for s in range(self.data.n_subjects)],
-                            params_cov=None if fit_type2_group.x_cov is None else [fit_type2_group.x_cov[s] for s in range(self.data.n_subjects)],
-                            pop_mean_sd=fit_type2_group.x_re_pop_mean_sd,
-                            execution_time=fit_type2_group.execution_time
-                        )
+                    fit_type2_group = group_estimation(
+                        fun=self.compute_type2_negll,
+                        n_subjects=self.data.n_subjects,
+                        params_init=params_subject,
+                        bounds=self.cfg._paramset_type2.bounds,
+                        idx_fe=idx_fe,
+                        idx_re=idx_re,
+                        num_cores=self.cfg._optim_num_cores,
+                        max_iter=30, sigma_floor=1e-3,
+                        random_effect_method=self.cfg.optim_type2_random_effect_method,
+                        include_posterior_variance=self.cfg.optim_type2_include_posterior_variance,
+                        verbosity=verbosity
+                    )
+
+                    self.result.type2.init_group()
+                    self.result.type2.group.store(
+                        'type2', self.cfg, self.data, self.compute_type2_negll,
+                        params=[fit_type2_group.x[s] for s in range(self.data.n_subjects)],
+                        params_se=[fit_type2_group.x_se[s] for s in range(self.data.n_subjects)],
+                        params_cov=None if fit_type2_group.x_cov is None else [fit_type2_group.x_cov[s] for s in range(self.data.n_subjects)],
+                        pop_mean_sd=fit_type2_group.x_re_pop_mean_sd,
+                        execution_time=fit_type2_group.execution_time,
+                        silence_warnings=silence_warnings
+                    )
 
             self.result.type2.store(cfg=self.cfg, data=self.data, fun=self.compute_type2_negll)
             if verbosity:
