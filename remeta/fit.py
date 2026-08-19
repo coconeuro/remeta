@@ -5,9 +5,9 @@ from itertools import product
 
 import numpy as np
 try:  # only necessary if multiple cores should be used
-    from multiprocessing_on_dill.pool import Pool as DillPool
+    from joblib import Parallel, delayed
 except ModuleNotFoundError:
-    pass
+    Parallel = None
 from datetime import datetime
 import scipy.optimize as sciopt
 from scipy.optimize._constraints import old_bound_to_new  # noqa
@@ -36,9 +36,11 @@ def loop(fun, params, args, gridsize, minimize_along_grid, bounds, verbosity, pa
 
 def fgrid(fun, valid, args, num_cores=1, minimize_along_grid=False, bounds=None, verbosity=1):
     if num_cores > 1:
-        with DillPool(num_cores) as pool:
-            result = pool.map(partial(loop, fun, valid, args, len(valid), minimize_along_grid, bounds, verbosity), range(len(valid)))
-            negll_grid, x_grid = [res[0] for res in result], [res[1] for res in result]
+        result = Parallel(n_jobs=num_cores)(
+            delayed(loop)(fun, valid, args, len(valid), minimize_along_grid, bounds, verbosity, i)
+            for i in range(len(valid))
+        )
+        negll_grid, x_grid = [res[0] for res in result], [res[1] for res in result]
     else:
         negll_grid = [None] * len(valid)
         x_grid = [None] * len(valid)
@@ -63,7 +65,7 @@ def fgrid(fun, valid, args, num_cores=1, minimize_along_grid=False, bounds=None,
 #         valid_candidate_ids = []
 #         grid_range = [None] * len(grid_candidates) * 2
 #         for j, grid_candidate in enumerate(grid_candidates):
-#             grid_range[j] = [None] * param_set.nparams_flat
+#             grid_range[j] = [None] * param_set.n_params_flat
 #             for k, p in enumerate(grid_candidate):
 #                 ind = np.where(previous_grid_range[candidate_ids[j]][k] == p)[0][0]
 #                 lb = previous_grid_range[candidate_ids[j]][k][max(0, ind - 1)]  # noqa
@@ -548,9 +550,9 @@ def group_estimation(fun, n_subjects, params_init, bounds, idx_fe, idx_re,
         a negative log likelihood in constrained parameter space.
     n_subjects : int
         Number of subjects.
-    params_init : array-like, shape (nsubjects, nparams)
+    params_init : array-like, shape (n_subjects, n_params)
         Initial subject-level parameter estimates in constrained parameter space.
-    bounds : array-like, shape (nparams, 2)
+    bounds : array-like, shape (n_params, 2)
         Lower and upper bounds for each parameter.
     idx_fe : array-like of int
         Parameter indices treated as fixed effects. These parameters are shared
@@ -616,7 +618,7 @@ def group_estimation(fun, n_subjects, params_init, bounds, idx_fe, idx_re,
         damping_sig = 1 if damping_sig is None else damping_sig
         return _group_estimation_measurement_error_map(
             fun=fun,
-            nsubjects=n_subjects,
+            n_subjects=n_subjects,
             params_init=params_init,
             bounds=bounds,
             idx_fe=idx_fe,
@@ -636,7 +638,7 @@ def group_estimation(fun, n_subjects, params_init, bounds, idx_fe, idx_re,
 
 
     params_init = np.array(params_init)
-    nparams = params_init.shape[1]
+    n_params = params_init.shape[1]
 
     # normalize indices once
     idx_fe = np.asarray(idx_fe, dtype=int) if len(idx_fe) > 0 else np.asarray([], dtype=int)
@@ -663,8 +665,8 @@ def group_estimation(fun, n_subjects, params_init, bounds, idx_fe, idx_re,
     # ----- subject-level identifiable dims -----
     # Subject loops optimize every non-FE coordinate. This includes random
     # effects plus any parameters that are neither fixed nor random effects.
-    all_idx = np.arange(nparams, dtype=int)
-    mask_free = np.ones(nparams, dtype=bool)
+    all_idx = np.arange(n_params, dtype=int)
+    mask_free = np.ones(n_params, dtype=bool)
     if len(idx_fe) > 0:
         mask_free[idx_fe] = False
     idx_free = all_idx[mask_free]  # subject-level identifiable dims (optimized per subject)
@@ -683,7 +685,7 @@ def group_estimation(fun, n_subjects, params_init, bounds, idx_fe, idx_re,
         uparams_sd = None
 
     # outputs (updated each iteration; final kept)
-    x_se = np.full((n_subjects, nparams), np.nan, dtype=float)
+    x_se = np.full((n_subjects, n_params), np.nan, dtype=float)
     cov_theta_free = None  # list of (d_free,d_free) from last iteration
 
     def subject_loop_factory(uparams_init_ref, uparams_fe_ref, uparams_mean_ref, uparams_sd_ref):
@@ -776,8 +778,9 @@ def group_estimation(fun, n_subjects, params_init, bounds, idx_fe, idx_re,
         )
 
         if num_cores > 1:
-            with DillPool(num_cores) as pool:
-                out = list(pool.map(subject_loop, range(n_subjects)))
+            out = Parallel(n_jobs=num_cores)(
+                delayed(subject_loop)(s) for s in range(n_subjects)
+            )
         else:
             out = [subject_loop(s) for s in range(n_subjects)]
 
@@ -844,7 +847,7 @@ def group_estimation(fun, n_subjects, params_init, bounds, idx_fe, idx_re,
     result.x_se = x_se
 
     # # always provide x_cov (for free block) even in FE-only
-    # result.x_cov = np.full((nsubjects, nparams, nparams), np.nan, dtype=float)
+    # result.x_cov = np.full((n_subjects, n_params, n_params), np.nan, dtype=float)
     # if cov_theta_free is not None:
     #     cov_arr = np.stack(cov_theta_free, axis=0)  # (N,d_free,d_free)
     #     # optional: enforce symmetry
@@ -852,7 +855,7 @@ def group_estimation(fun, n_subjects, params_init, bounds, idx_fe, idx_re,
     #     result.x_cov[:, *np.ix_(idx_free, idx_free)] = cov_arr
 
 
-    result.x_cov = np.full((n_subjects, nparams, nparams), np.nan, dtype=float)
+    result.x_cov = np.full((n_subjects, n_params, n_params), np.nan, dtype=float)
     if has_re:
         # keep your existing behavior in RE case (free-free only)
         cov_arr = np.stack(cov_theta_free, axis=0)  # (N,d_free,d_free)
@@ -862,11 +865,10 @@ def group_estimation(fun, n_subjects, params_init, bounds, idx_fe, idx_re,
     else:
         # FE-only: compute full KxK per subject (includes FE blocks + cross)
         if num_cores > 1:
-            with DillPool(num_cores) as pool:
-                cov_full_list = list(pool.map(
-                    lambda s: fe_only_full_cov_per_subject(s, fun, uparams_init, uparams_fe, idx_fe, idx_free, bounds),
-                    range(n_subjects)
-                ))
+            cov_full_list = Parallel(n_jobs=num_cores)(
+                delayed(fe_only_full_cov_per_subject)(s, fun, uparams_init, uparams_fe, idx_fe, idx_free, bounds)
+                for s in range(n_subjects)
+            )
         else:
             cov_full_list = [fe_only_full_cov_per_subject(s, fun, uparams_init, uparams_fe, idx_fe, idx_free, bounds)
                              for s in range(n_subjects)]
@@ -887,7 +889,7 @@ def group_estimation(fun, n_subjects, params_init, bounds, idx_fe, idx_re,
     return result
 
 
-def _group_estimation_measurement_error_normal(fun, nsubjects, params_init, bounds, idx_fe, idx_re,
+def _group_estimation_measurement_error_normal(fun, n_subjects, params_init, bounds, idx_fe, idx_re,
                                                num_cores=1, max_iter=100, sigma_floor=1e-2,
                                                damping_mu=1.0, damping_sig=1.0, eig_floor=1e-10,
                                                verbosity=1):
@@ -903,11 +905,11 @@ def _group_estimation_measurement_error_normal(fun, nsubjects, params_init, boun
     # routines, where shape errors are otherwise harder to interpret.
     params_init = np.array(params_init)
     bounds = np.asarray(bounds, dtype=float)
-    nparams = params_init.shape[1]
-    if params_init.shape[0] != nsubjects:
+    n_params = params_init.shape[1]
+    if params_init.shape[0] != n_subjects:
         raise ValueError('params_init must have one row per subject')
-    if bounds.shape != (nparams, 2):
-        raise ValueError('bounds must have shape (nparams, 2)')
+    if bounds.shape != (n_params, 2):
+        raise ValueError('bounds must have shape (n_params, 2)')
 
     idx_fe = np.asarray(idx_fe, dtype=int) if len(idx_fe) > 0 else np.asarray([], dtype=int)
     idx_re = np.asarray(idx_re, dtype=int) if len(idx_re) > 0 else np.asarray([], dtype=int)
@@ -942,8 +944,8 @@ def _group_estimation_measurement_error_normal(fun, nsubjects, params_init, boun
     # Subject-level free coordinates are all non-FE coordinates. Random effects
     # must be contained in this block because FE coordinates are shared, not
     # subject-specific.
-    all_idx = np.arange(nparams, dtype=int)
-    mask_free = np.ones(nparams, dtype=bool)
+    all_idx = np.arange(n_params, dtype=int)
+    mask_free = np.ones(n_params, dtype=bool)
     if len(idx_fe) > 0:
         mask_free[idx_fe] = False
     idx_free = all_idx[mask_free]
@@ -997,10 +999,11 @@ def _group_estimation_measurement_error_normal(fun, nsubjects, params_init, boun
         return u_hat_full, H, Sigma_u_free
 
     if num_cores > 1:
-        with DillPool(num_cores) as pool:
-            out = list(pool.map(subject_likelihood_loop, range(nsubjects)))
+        out = Parallel(n_jobs=num_cores)(
+            delayed(subject_likelihood_loop)(s) for s in range(n_subjects)
+        )
     else:
-        out = [subject_likelihood_loop(s) for s in range(nsubjects)]
+        out = [subject_likelihood_loop(s) for s in range(n_subjects)]
 
     uparams_lik = np.array([o[0] for o in out])
     H_lik_free = [o[1] for o in out]
@@ -1014,10 +1017,10 @@ def _group_estimation_measurement_error_normal(fun, nsubjects, params_init, boun
         prior_prec = 1.0 / tau2
         post_u_free = []
         post_cov_u_free = []
-        post_re_mean = np.empty((nsubjects, idx_re.size), dtype=float)
-        post_re_var = np.empty((nsubjects, idx_re.size), dtype=float)
+        post_re_mean = np.empty((n_subjects, idx_re.size), dtype=float)
+        post_re_var = np.empty((n_subjects, idx_re.size), dtype=float)
 
-        for s in range(nsubjects):
+        for s in range(n_subjects):
             # Posterior precision = likelihood precision + prior precision on
             # RE coordinates. Non-RE free coordinates keep likelihood precision.
             H_post = H_lik_free[s].copy()
@@ -1083,13 +1086,13 @@ def _group_estimation_measurement_error_normal(fun, nsubjects, params_init, boun
         uparams_final[:, idx_free] = post_u_free
 
     params = transform_to_constrained_space(uparams_final, bounds)
-    x_se = np.full((nsubjects, nparams), np.nan, dtype=float)
+    x_se = np.full((n_subjects, n_params), np.nan, dtype=float)
     result = sciopt.OptimizeResult(x=params)
-    result.x_cov = np.full((nsubjects, nparams, nparams), np.nan, dtype=float)
+    result.x_cov = np.full((n_subjects, n_params, n_params), np.nan, dtype=float)
 
     # Convert each subject posterior covariance from u-space to constrained
     # parameter space by the delta method.
-    for s in range(nsubjects):
+    for s in range(n_subjects):
         deriv_free = d_transform_constrained_du(uparams_final[s], bounds)[idx_free]
         Sigma_theta_free = (deriv_free[:, None] * post_cov_u_free[s]) * deriv_free[None, :]
         Sigma_theta_free = 0.5 * (Sigma_theta_free + Sigma_theta_free.T)
@@ -1127,7 +1130,7 @@ def _group_estimation_measurement_error_normal(fun, nsubjects, params_init, boun
     return result
 
 
-def _group_estimation_measurement_error_map(fun, nsubjects, params_init, bounds, idx_fe, idx_re,
+def _group_estimation_measurement_error_map(fun, n_subjects, params_init, bounds, idx_fe, idx_re,
                                             num_cores=1, max_iter=100, sigma_floor=1e-2,
                                             damping_mu=1.0, damping_sig=1.0, eig_floor=1e-10, verbosity=1):
     """
@@ -1156,7 +1159,7 @@ def _group_estimation_measurement_error_map(fun, nsubjects, params_init, bounds,
     # posteriors using likelihood-only fits plus Hessian-based uncertainty.
     result_normal = _group_estimation_measurement_error_normal(
         fun=fun,
-        nsubjects=nsubjects,
+        n_subjects=n_subjects,
         params_init=params_init,
         bounds=bounds,
         idx_fe=idx_fe,
@@ -1172,7 +1175,7 @@ def _group_estimation_measurement_error_map(fun, nsubjects, params_init, bounds,
 
     bounds = np.asarray(bounds, dtype=float)
     params_init = np.asarray(params_init, dtype=float)
-    nparams = params_init.shape[1]
+    n_params = params_init.shape[1]
     idx_fe = np.asarray(idx_fe, dtype=int) if len(idx_fe) > 0 else np.asarray([], dtype=int)
     idx_re = np.asarray(idx_re, dtype=int) if len(idx_re) > 0 else np.asarray([], dtype=int)
     has_re = (len(idx_re) > 0)
@@ -1186,8 +1189,8 @@ def _group_estimation_measurement_error_map(fun, nsubjects, params_init, bounds,
     if verbosity:
         print(f'{TAB}Final nonlinear MAP optimization with fixed group prior')
 
-    all_idx = np.arange(nparams, dtype=int)
-    mask_free = np.ones(nparams, dtype=bool)
+    all_idx = np.arange(n_params, dtype=int)
+    mask_free = np.ones(n_params, dtype=bool)
     if len(idx_fe) > 0:
         mask_free[idx_fe] = False
     idx_free = all_idx[mask_free]
@@ -1239,10 +1242,11 @@ def _group_estimation_measurement_error_map(fun, nsubjects, params_init, bounds,
         return u_hat_full, se_theta_free, Sigma_theta_free
 
     if num_cores > 1:
-        with DillPool(num_cores) as pool:
-            out = list(pool.map(final_subject_loop, range(nsubjects)))
+        out = Parallel(n_jobs=num_cores)(
+            delayed(final_subject_loop)(s) for s in range(n_subjects)
+        )
     else:
-        out = [final_subject_loop(s) for s in range(nsubjects)]
+        out = [final_subject_loop(s) for s in range(n_subjects)]
 
     uparams_final = np.array([o[0] for o in out])
     se_theta_free = np.array([o[1] for o in out])
@@ -1251,7 +1255,7 @@ def _group_estimation_measurement_error_map(fun, nsubjects, params_init, bounds,
     # Final subject estimates are nonlinear MAP estimates; shared FEs are
     # imposed after transforming back to constrained space.
     params = transform_to_constrained_space(uparams_final, bounds)
-    x_se = np.full((nsubjects, nparams), np.nan, dtype=float)
+    x_se = np.full((n_subjects, n_params), np.nan, dtype=float)
     x_se[:, idx_free] = se_theta_free
 
     if len(idx_fe) > 0:
@@ -1263,7 +1267,7 @@ def _group_estimation_measurement_error_map(fun, nsubjects, params_init, bounds,
 
     result = sciopt.OptimizeResult(x=params)
     result.x_se = x_se
-    result.x_cov = np.full((nsubjects, nparams, nparams), np.nan, dtype=float)
+    result.x_cov = np.full((n_subjects, n_params, n_params), np.nan, dtype=float)
     cov_arr = np.stack(cov_theta_free, axis=0)
     cov_arr = 0.5 * (cov_arr + np.swapaxes(cov_arr, 1, 2))
     result.x_cov[(slice(None),) + np.ix_(idx_free, idx_free)] = cov_arr
